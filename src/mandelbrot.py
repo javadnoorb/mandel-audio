@@ -1,8 +1,9 @@
 from numba import jit
 import numpy as np
+from src.plotting import *
 
 @jit
-def mandelbrot(creal,cimag,maxiter):
+def mandelbrot(creal, cimag, maxiter):
     real = creal
     imag = cimag
     for n in range(maxiter):
@@ -16,7 +17,7 @@ def mandelbrot(creal,cimag,maxiter):
 
 
 @jit
-def mandelbrot_set(xmin,xmax,ymin,ymax,width,height,maxiter):
+def mandelbrot_set(xmin, xmax, ymin, ymax, width, height, maxiter):
     r1 = np.linspace(xmin, xmax, width)
     r2 = np.linspace(ymin, ymax, height)
     n3 = np.empty((width,height))
