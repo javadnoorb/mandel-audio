@@ -17,12 +17,17 @@ def mandelbrot(creal, cimag, maxiter):
 
 
 @jit
-def mandelbrot_set(xmin, xmax, ymin, ymax, width, height, maxiter, scale=1.0):
-    scale = np.float(scale)
-    r1 = np.linspace(xmin / scale, xmax / scale, width)
-    r2 = np.linspace(ymin / scale, ymax / scale, height)
+def mandelbrot_set_(xmin, xmax, ymin, ymax, width, height, maxiter):
+    r1 = np.linspace(xmin, xmax, width)
+    r2 = np.linspace(ymin, ymax, height)
     n3 = np.empty((width, height))
     for i in range(width):
         for j in range(height):
             n3[i,j] = mandelbrot(r1[i],r2[j], maxiter)
     return (r1,r2,n3)
+
+def mandelbrot_set(x, y, unscaled_width=2.5, N=1000, maxiter=100, scale=0.0):
+    L = unscaled_width * (2**-scale) / 2
+    
+    m = mandelbrot_set_(x-L, x+L, y-L, y+L, N, N, maxiter)
+    return m
