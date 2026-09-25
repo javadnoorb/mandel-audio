@@ -75,6 +75,25 @@ precision caps `--end-scale` at roughly `45`; a perturbation-based
 deep-zoom renderer that goes past that is a planned follow-up (see
 Roadmap).
 
+### Uploading to YouTube
+
+By default the final mux just copies the (much higher-bitrate than
+necessary for delivery) intermediate video stream through untouched,
+and encodes audio at ffmpeg's default AAC bitrate. Pass `--youtube` to
+re-encode instead at [YouTube's recommended upload
+settings](https://support.google.com/youtube/answer/1722171) for the
+render's resolution:
+
+```bash
+mandel-audio video -x -0.74529 -y 0.113075 --audio-file song.mp3 \
+                    -N 1080 --youtube -o youtube_ready.mp4
+```
+
+This picks the video bitrate from YouTube's own table by `-N`
+(8 Mbps at 1080p, 5 Mbps at 720p, etc.), encodes audio at 384kbps/48kHz
+AAC, and uses a closed 2-second GOP — ready to upload with no extra
+re-encoding step, instead of guessing at a bitrate yourself.
+
 ### Performance
 
 Rendering is CPU-bound (no GPU use); two things keep it reasonably

@@ -31,6 +31,34 @@ from mandel_audio.fractal import MAX_SAFE_SCALE, mandelbrot_set
 # colormap (input in [0, 1]) and blended by that band's energy weight.
 BAND_CMAPS = {"bass": "inferno", "mid": "viridis", "treble": "cool"}
 
+# YouTube's recommended H.264 video bitrate (kbps) by frame height, for
+# standard (<=30fps) SDR uploads:
+# https://support.google.com/youtube/answer/1722171
+YOUTUBE_VIDEO_BITRATE_KBPS = {
+    360: 1000,
+    480: 2500,
+    720: 5000,
+    1080: 8000,
+    1440: 16000,
+    2160: 40000,
+}
+YOUTUBE_AUDIO_BITRATE_KBPS = 384
+YOUTUBE_AUDIO_SAMPLE_RATE = 48000
+
+
+def youtube_video_bitrate(height: int) -> int:
+    """Recommended H.264 video bitrate in kbps for a frame of this height.
+
+    Falls back to the nearest tier at or below ``height`` (or the
+    lowest tier, for anything smaller than 360p).
+    """
+    tiers = sorted(YOUTUBE_VIDEO_BITRATE_KBPS)
+    chosen = tiers[0]
+    for tier in tiers:
+        if height >= tier:
+            chosen = tier
+    return YOUTUBE_VIDEO_BITRATE_KBPS[chosen]
+
 
 def zoom_schedule(
     features: AudioFeatures,
@@ -133,6 +161,7 @@ def render_reactive_video(
     min_maxiter: int = 100,
     max_duration: float | None = None,
     sr: int = 44100,
+    youtube: bool = False,
 ) -> str:
     """Render a music-reactive zoom video.
 
@@ -150,6 +179,13 @@ def render_reactive_video(
     ``end_scale`` beyond ``mandel_audio.fractal.MAX_SAFE_SCALE`` (~45)
     is not supported here (see ``render_frame``); a deep-zoom renderer
     is a separate follow-up.
+
+    ``youtube``: re-encode the final mux at YouTube's recommended
+    bitrate for the render's resolution (``youtube_video_bitrate``),
+    384 kbps AAC audio at 48 kHz, and a closed GOP every 2 seconds --
+    instead of the default, which copies the (much higher-bitrate,
+    larger-than-necessary for delivery) intermediate video stream
+    through untouched and muxes audio at ffmpeg's default AAC bitrate.
     """
     if end_scale > MAX_SAFE_SCALE:
         import warnings
@@ -215,17 +251,28 @@ def render_reactive_video(
         # video length, then mux.
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
         video_duration = features.num_frames / fps
-        cmd = [
-            ffmpeg_exe,
-            "-y",
-            "-i", video_only,
-            "-i", track_path,
-            "-t", str(video_duration),
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-shortest",
-            output_path,
-        ]
+        cmd = [ffmpeg_exe, "-y", "-i", video_only, "-i", track_path, "-t", str(video_duration)]
+
+        if youtube:
+            bitrate = youtube_video_bitrate(N)
+            gop = fps * 2  # closed GOP every 2s, per YouTube's guidance
+            cmd += [
+                "-c:v", "libx264",
+                "-b:v", f"{bitrate}k",
+                "-maxrate", f"{int(bitrate * 1.15)}k",
+                "-bufsize", f"{bitrate * 2}k",
+                "-pix_fmt", "yuv420p",
+                "-g", str(gop),
+                "-keyint_min", str(gop),
+                "-sc_threshold", "0",
+                "-c:a", "aac",
+                "-b:a", f"{YOUTUBE_AUDIO_BITRATE_KBPS}k",
+                "-ar", str(YOUTUBE_AUDIO_SAMPLE_RATE),
+            ]
+        else:
+            cmd += ["-c:v", "copy", "-c:a", "aac"]
+
+        cmd += ["-shortest", output_path]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(f"ffmpeg mux failed:\n{result.stderr}")

@@ -1,12 +1,19 @@
+import re
+import subprocess
+
+import imageio_ffmpeg
 import numpy as np
 import pytest
 
 from mandel_audio.audio_analysis import AudioFeatures
 from mandel_audio.fractal import mandelbrot_set_grid
 from mandel_audio.reactive import (
+    YOUTUBE_AUDIO_BITRATE_KBPS,
+    YOUTUBE_AUDIO_SAMPLE_RATE,
     blend_frame_color,
     maxiter_schedule,
     render_reactive_video,
+    youtube_video_bitrate,
     zoom_schedule,
 )
 
@@ -113,3 +120,82 @@ def test_render_reactive_video_generative_fallback_smoke(tmp_path):
     assert result == str(out)
     assert out.exists()
     assert out.stat().st_size > 0
+
+
+@pytest.mark.parametrize(
+    ("height", "expected_kbps"),
+    [
+        (360, 1000),
+        (480, 2500),
+        (720, 5000),
+        (1080, 8000),
+        (1440, 16000),
+        (2160, 40000),
+        (1000, 5000),  # between tiers -> falls back to the tier below (720p's)
+        (100, 1000),  # smaller than the lowest tier -> still returns the lowest tier
+    ],
+)
+def test_youtube_video_bitrate_table(height, expected_kbps):
+    assert youtube_video_bitrate(height) == expected_kbps
+
+
+def _probe_streams(path):
+    # imageio_ffmpeg bundles ffmpeg but not ffprobe; ffmpeg -i with no
+    # output prints the same stream info to stderr before erroring, so
+    # that's what we parse instead of shelling out to a separate tool.
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    result = subprocess.run([ffmpeg, "-i", path], capture_output=True, text=True)
+    text = result.stderr
+
+    video_bitrate = None
+    video_match = re.search(r"Video:.*?(\d+) kb/s", text)
+    if video_match:
+        video_bitrate = int(video_match.group(1)) * 1000
+
+    audio_match = re.search(r"Audio:\s*(\w+).*?(\d+) Hz.*?(\d+) kb/s", text)
+    audio_codec = audio_match.group(1) if audio_match else None
+    audio_sample_rate = int(audio_match.group(2)) if audio_match else None
+    audio_bitrate = int(audio_match.group(3)) * 1000 if audio_match else None
+
+    video_codec_match = re.search(r"Video:\s*(\w+)", text)
+    video_codec = video_codec_match.group(1) if video_codec_match else None
+
+    return {
+        "video_codec": video_codec,
+        "video_bitrate": video_bitrate,
+        "audio_codec": audio_codec,
+        "audio_sample_rate": audio_sample_rate,
+        "audio_bitrate": audio_bitrate,
+    }
+
+
+def test_render_reactive_video_youtube_preset(tmp_path):
+    out = tmp_path / "youtube.mp4"
+    N = 360  # smallest YouTube tier, to keep this test fast
+    render_reactive_video(
+        -0.5,
+        0.0,
+        str(out),
+        audio_path=None,
+        start_scale=0.0,
+        end_scale=2.0,
+        fps=4,
+        N=N,
+        maxiter=80,
+        max_duration=1.0,
+        youtube=True,
+    )
+    assert out.exists()
+
+    info = _probe_streams(str(out))
+    assert info["video_codec"] == "h264"
+    # actual encoded bitrate varies a bit around the -b:v target; a 40%
+    # band is generous enough to not be flaky while still catching a
+    # completely wrong bitrate (e.g. the untouched high-bitrate default).
+    target = youtube_video_bitrate(N) * 1000
+    assert info["video_bitrate"] is not None
+    assert info["video_bitrate"] < target * 1.4
+
+    assert info["audio_codec"] == "aac"
+    assert info["audio_sample_rate"] == YOUTUBE_AUDIO_SAMPLE_RATE
+    assert info["audio_bitrate"] < YOUTUBE_AUDIO_BITRATE_KBPS * 1000 * 1.2
