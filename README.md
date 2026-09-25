@@ -52,9 +52,10 @@ tests/
 
 This repo is being revamped across several PRs:
 
-1. **Foundation** (this PR): fixed bugs, package restructure, tests, CI,
-   notebook removed.
+1. **Foundation**: fixed bugs, package restructure, tests, CI, notebook
+   removed.
 2. **Audio**: sonify orbits (escape trajectories) to WAV.
-3. **Web app**: a WebGL + Web Audio interactive explorer.
+3. **Web app** (this PR): a WebGL + Web Audio interactive explorer, see
+   [`web/`](web/).
 4. **Deep zoom & video**: perturbation-based deep zoom and rendered
    zoom videos with a generated soundtrack.
