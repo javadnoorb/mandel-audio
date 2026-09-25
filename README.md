@@ -16,8 +16,11 @@ pip install -e ".[dev]"
 ## Usage
 
 ```bash
-# CLI: render a PNG
-mandel-audio -x -0.74529 -y 0.113075 --scale 8 --maxiter 2000 -o zoom.png
+# render a PNG
+mandel-audio render -x -0.74529 -y 0.113075 --scale 8 --maxiter 2000 -o zoom.png
+
+# sonify a point's orbit to a WAV file
+mandel-audio sonify -x -0.74529 -y 0.113075 --duration 5 -o orbit.wav
 
 # library
 python -c "
@@ -26,6 +29,21 @@ fig = mandelbrot_image(-0.5, 0.0, scale=0, maxiter=1000, cmap='gnuplot2')
 fig.savefig('mandelbrot.png')
 "
 ```
+
+### Sonification
+
+`mandel-audio sonify` computes the orbit of `c = x + y*i` under
+`z -> z**2 + c` and resamples it into an audio buffer (real part on the
+left channel, imaginary part on the right):
+
+- points **inside** the set settle onto a fixed point or short cycle →
+  a tone or a small chord;
+- points near the **boundary** wander chaotically → noise-like textures;
+- points that **escape quickly** → a short chirp.
+
+Try a boundary point like `-0.74529, 0.113075` (near the "seahorse
+valley") versus a deep interior point like `-1.0, 0.0` (center of the
+period-2 bulb) to hear the difference.
 
 `scale` is a log2 zoom factor (each +1 halves the viewport). Float64
 precision caps useful zoom at roughly `scale=45`; a deep-zoom
