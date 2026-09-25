@@ -1,6 +1,7 @@
 """mandel-audio: explore the Mandelbrot set, visually and (soon) sonically."""
 
 from mandel_audio.audio import compute_orbit, orbit_to_audio, save_wav
+from mandel_audio.audio_analysis import AudioFeatures, analyze, analyze_file, load_audio
 from mandel_audio.deepzoom import deepzoom_set
 from mandel_audio.fractal import mandelbrot, mandelbrot_set, mandelbrot_set_grid
 from mandel_audio.render import mandelbrot_image
@@ -16,6 +17,10 @@ __all__ = [
     "save_wav",
     "deepzoom_set",
     "render_zoom_video",
+    "AudioFeatures",
+    "analyze",
+    "analyze_file",
+    "load_audio",
 ]
 
 __version__ = "0.2.0"
