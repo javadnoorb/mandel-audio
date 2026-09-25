@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mandel-audio"
-version = "0.2.0"
-description = "Explore the Mandelbrot set, visually and sonically."
+version = "0.3.0"
+description = "A fractal zoom video renderer that reacts to music."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
@@ -13,6 +13,10 @@ dependencies = [
     "numpy>=1.24",
     "numba>=0.58",
     "matplotlib>=3.7",
+    "soundfile>=0.12",
+    "imageio>=2.31",
+    "imageio-ffmpeg>=0.4",
+    "librosa>=0.10",
 ]
 
 [project.optional-dependencies]
