@@ -84,6 +84,14 @@ def build_parser() -> argparse.ArgumentParser:
         "necessary) intermediate video stream through untouched.",
     )
     video_p.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="render frames across this many processes (frames are independent, "
+        "so this scales with core count on bigger machines; default 1 = "
+        "sequential, same as before this option existed)",
+    )
+    video_p.add_argument(
         "-o", "--output", type=str, default="zoom.mp4", help="output file path"
     )
 
@@ -132,6 +140,7 @@ def main(argv: list[str] | None = None) -> None:
             min_maxiter=args.min_maxiter,
             max_duration=args.max_duration,
             youtube=args.youtube,
+            workers=args.workers,
         )
         print(f"wrote {args.output}")
 

@@ -14,8 +14,11 @@ same reactive pipeline drives the visuals either way.
 
 from __future__ import annotations
 
+import multiprocessing
+import os
 import subprocess
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import imageio.v2 as imageio
@@ -147,6 +150,31 @@ def render_frame(x, y, scale: float, N: int = 400, maxiter: int = 500) -> np.nda
     return z
 
 
+def _render_and_color_one_frame(
+    task: tuple[float, float, float, int, int, float, float, float, float, int | None],
+) -> np.ndarray:
+    """Render + color a single frame. Runs in a worker process.
+
+    Takes one packed tuple (rather than several args) since
+    ``ProcessPoolExecutor.map`` passes one iterable per parameter --
+    packing keeps the call site a plain ``map`` over a task list. Must
+    stay a module-level function (not a closure) so it can be pickled
+    to send to worker processes.
+    """
+    x, y, scale, maxiter, N, bass, mid, treble, loudness, numba_threads = task
+    if numba_threads is not None:
+        # Each worker process gets its own numba thread pool; left at
+        # its default, every worker would independently claim all
+        # available cores, oversubscribing the machine once more than
+        # one worker is active. Capped to (total cores / worker count)
+        # by the caller.
+        import numba
+
+        numba.set_num_threads(numba_threads)
+    z = render_frame(x, y, scale, N=N, maxiter=maxiter)
+    return blend_frame_color(z, bass, mid, treble, loudness)
+
+
 def render_reactive_video(
     x,
     y,
@@ -162,6 +190,7 @@ def render_reactive_video(
     max_duration: float | None = None,
     sr: int = 44100,
     youtube: bool = False,
+    workers: int = 1,
 ) -> str:
     """Render a music-reactive zoom video.
 
@@ -186,6 +215,21 @@ def render_reactive_video(
     instead of the default, which copies the (much higher-bitrate,
     larger-than-necessary for delivery) intermediate video stream
     through untouched and muxes audio at ffmpeg's default AAC bitrate.
+
+    ``workers``: frames are fully independent (each depends only on
+    its own scale/maxiter/band weights, not on neighboring frames), so
+    rendering can be split across processes with no coordination
+    needed beyond writing frames back out in order. ``workers=1``
+    (default) renders sequentially in this process, same as before
+    this parameter existed. ``workers > 1`` splits frames across that
+    many worker processes, each capped to ``cpu_count() // workers``
+    numba threads so the total thread count across all workers stays
+    within the machine's core count instead of oversubscribing it.
+
+    This mainly pays off on a machine with more cores than one frame's
+    internal parallelism (numba's grid computation) can already use by
+    itself -- on a small machine already saturated by one frame, more
+    workers just adds process/IPC overhead for little or no gain.
     """
     if end_scale > MAX_SAFE_SCALE:
         import warnings
@@ -234,16 +278,53 @@ def render_reactive_video(
             video_only, fps=fps, codec="libx264", quality=8, macro_block_size=None
         )
         try:
-            for i in range(features.num_frames):
-                z = render_frame(x, y, float(scales[i]), N=N, maxiter=int(maxiters[i]))
-                frame = blend_frame_color(
-                    z,
-                    float(features.bass[i]),
-                    float(features.mid[i]),
-                    float(features.treble[i]),
-                    float(features.loudness[i]),
-                )
-                writer.append_data(frame)
+            if workers <= 1:
+                for i in range(features.num_frames):
+                    z = render_frame(x, y, float(scales[i]), N=N, maxiter=int(maxiters[i]))
+                    frame = blend_frame_color(
+                        z,
+                        float(features.bass[i]),
+                        float(features.mid[i]),
+                        float(features.treble[i]),
+                        float(features.loudness[i]),
+                    )
+                    writer.append_data(frame)
+            else:
+                threads_per_worker = max(1, (os.cpu_count() or 1) // workers)
+                tasks = [
+                    (
+                        x,
+                        y,
+                        float(scales[i]),
+                        int(maxiters[i]),
+                        N,
+                        float(features.bass[i]),
+                        float(features.mid[i]),
+                        float(features.treble[i]),
+                        float(features.loudness[i]),
+                        threads_per_worker,
+                    )
+                    for i in range(features.num_frames)
+                ]
+                # ProcessPoolExecutor.map yields results in task order
+                # regardless of which worker finishes first, so frames
+                # still get written to the video in the right sequence.
+                #
+                # mp_context="spawn", not the Linux default "fork": by
+                # the time we get here, numba has already spun up its
+                # OpenMP thread pool in this process (from JIT-warming
+                # or an earlier render_frame call), and forking a
+                # process that already has OpenMP threads running is
+                # unsafe -- glibc detects it and aborts the child
+                # ("fork() called from a process already using GNU
+                # OpenMP"). Spawn starts each worker as a fresh
+                # interpreter instead of forking this one, sidestepping
+                # the problem entirely (numba's own docs recommend the
+                # same for combining it with multiprocessing).
+                ctx = multiprocessing.get_context("spawn")
+                with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as executor:
+                    for frame in executor.map(_render_and_color_one_frame, tasks):
+                        writer.append_data(frame)
         finally:
             writer.close()
 
