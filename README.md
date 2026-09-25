@@ -22,6 +22,14 @@ mandel-audio render -x -0.74529 -y 0.113075 --scale 8 --maxiter 2000 -o zoom.png
 # sonify a point's orbit to a WAV file
 mandel-audio sonify -x -0.74529 -y 0.113075 --duration 5 -o orbit.wav
 
+# render past float64 zoom limits (note the quoted, high-precision coordinates)
+mandel-audio deepzoom -x "-0.342071683454700989522671970850" \
+                       -y "-0.616557516977488490462311059437" \
+                       --scale 60 -o deepzoom.png
+
+# render a zoom-in video with an orbit-sonification soundtrack
+mandel-audio video -x -0.74529 -y 0.113075 --end-scale 20 --frames 120 -o zoom.mp4
+
 # library
 python -c "
 from mandel_audio.render import mandelbrot_image
@@ -46,8 +54,29 @@ valley") versus a deep interior point like `-1.0, 0.0` (center of the
 period-2 bulb) to hear the difference.
 
 `scale` is a log2 zoom factor (each +1 halves the viewport). Float64
-precision caps useful zoom at roughly `scale=45`; a deep-zoom
-(perturbation-based) renderer is planned as a follow-up.
+precision caps useful zoom at roughly `scale=45`.
+
+### Deep zoom
+
+Past `scale=45`, `mandel-audio deepzoom` switches to perturbation
+theory: one high-precision reference orbit (via `mpmath`), plus a
+float64 delta per pixel — see `mandel_audio/deepzoom.py` for the
+math. Pass `x`/`y` as **quoted strings** with enough digits for your
+target scale (a plain float only carries ~15-17 significant digits,
+which defeats the point).
+
+This implementation does not do glitch correction/rebasing, so very
+deep or off-center zooms may show speckled artifacts; picking a
+reference point that doesn't escape quickly (near the zoom target,
+ideally just inside the set) keeps them minimal.
+
+### Video
+
+`mandel-audio video` renders a zoom-in sequence (via `ffmpeg`, bundled
+through `imageio-ffmpeg` — no system install needed) from `--start-scale`
+to `--end-scale`, automatically switching to the deep-zoom renderer once
+`--end-scale` exceeds float64 limits. By default the soundtrack is the
+target point's orbit sonification, stretched to the video's duration.
 
 ## Development
 
@@ -60,19 +89,23 @@ ruff check .
 
 ```
 mandel_audio/
-  fractal.py   # numba-jitted escape-time computation
-  render.py    # matplotlib rendering
-  cli.py       # `mandel-audio` command
+  fractal.py    # numba-jitted escape-time computation (float64)
+  deepzoom.py   # perturbation-based deep zoom, past float64 limits
+  audio.py      # orbit sonification (WAV)
+  render.py     # matplotlib rendering
+  video.py      # zoom-in video rendering + soundtrack muxing
+  cli.py        # `mandel-audio` command
 tests/
+web/            # WebGL + Web Audio interactive explorer
 ```
 
 ## Roadmap
 
 This repo is being revamped across several PRs:
 
-1. **Foundation** (this PR): fixed bugs, package restructure, tests, CI,
+1. **Foundation**: fixed bugs, package restructure, tests, CI,
    notebook removed.
 2. **Audio**: sonify orbits (escape trajectories) to WAV.
 3. **Web app**: a WebGL + Web Audio interactive explorer.
-4. **Deep zoom & video**: perturbation-based deep zoom and rendered
-   zoom videos with a generated soundtrack.
+4. **Deep zoom & video** (this PR): perturbation-based deep zoom and
+   rendered zoom videos with a generated soundtrack.
