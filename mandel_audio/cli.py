@@ -53,7 +53,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     video_p.add_argument("--fps", type=int, default=24, help="frames per second")
     video_p.add_argument("-N", type=int, default=400, help="grid resolution (N x N)")
-    video_p.add_argument("--maxiter", type=int, default=500, help="max iterations per frame")
+    video_p.add_argument(
+        "--maxiter",
+        type=int,
+        default=500,
+        help="max iterations at the deepest frame reached (earlier, shallower "
+        "frames use progressively fewer, down to --min-maxiter)",
+    )
+    video_p.add_argument(
+        "--min-maxiter",
+        type=int,
+        default=100,
+        help="iterations at the shallowest (scale=0) frame; pass equal to "
+        "--maxiter to disable the ramp and use a fixed count for every frame",
+    )
     video_p.add_argument(
         "--max-duration",
         type=float,
@@ -94,6 +107,7 @@ def main(argv: list[str] | None = None) -> None:
             fps=args.fps,
             N=args.N,
             maxiter=args.maxiter,
+            min_maxiter=args.min_maxiter,
             max_duration=args.max_duration,
         )
         print(f"wrote {args.output}")

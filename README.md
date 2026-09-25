@@ -65,6 +65,33 @@ precision caps `--end-scale` at roughly `45`; a perturbation-based
 deep-zoom renderer that goes past that is a planned follow-up (see
 Roadmap).
 
+### Performance
+
+Rendering is CPU-bound (no GPU use); two things keep it reasonably
+fast on a handful of cores:
+
+- **Adaptive `--maxiter`** (`reactive.maxiter_schedule`): iteration
+  count is the single largest lever on render time (linear in
+  `maxiter`), but wide/shallow-zoom frames resolve correctly with far
+  fewer iterations than deep zoom needs for fine boundary detail.
+  `--maxiter` is the count at the *deepest* frame reached; earlier
+  frames ramp up from `--min-maxiter` (default `100`). Pass
+  `--min-maxiter` equal to `--maxiter` to disable this and use a fixed
+  count for every frame.
+- **Load-balanced parallel grid computation** (`fractal._scatter_order`):
+  escape-time cost varies enormously and spatially -- pixels near the
+  boundary cost far more than deep-interior or quickly-escaping ones,
+  and nearby pixels cost about the same. Numba's `prange` hands each
+  thread a contiguous block of pixels, so a naive row/column split
+  gives some threads a cheap uniform region while others get stuck in
+  an expensive one. Computing pixels in a fixed scattered order (same
+  output, just reordered work) measured up to ~2x faster on typical
+  (non-uniform) views on this project's 4-core dev machine.
+
+Measured together on that same machine: a 1080x1080/20s clip that took
+5m25s before these changes rendered in 3m4s after (~1.8x), same visual
+quality.
+
 ## Development
 
 ```bash
