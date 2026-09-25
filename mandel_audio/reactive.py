@@ -25,6 +25,7 @@ from matplotlib import colormaps
 
 from mandel_audio.audio import orbit_to_audio, save_wav
 from mandel_audio.audio_analysis import AudioFeatures, analyze, analyze_file
+from mandel_audio.deepzoom import deepzoom_set
 from mandel_audio.fractal import MAX_SAFE_SCALE, mandelbrot_set
 
 # Band -> palette. Each is sampled the same way matplotlib samples a
@@ -136,14 +137,18 @@ def blend_frame_color(
 
 
 def render_frame(x, y, scale: float, N: int = 400, maxiter: int = 500) -> np.ndarray:
-    """Render one escape-time grid at float64 precision.
+    """Render one escape-time grid.
 
-    ``scale`` beyond ``mandel_audio.fractal.MAX_SAFE_SCALE`` (~45) will
-    degrade into blocks -- there is no deep-zoom fallback here; that's
-    a separate follow-up (perturbation-based rendering past float64
-    limits).
+    Uses plain float64 (``mandel_audio.fractal.mandelbrot_set``) up to
+    ``MAX_SAFE_SCALE`` (~45), then switches to the perturbation-based
+    deep-zoom renderer (``mandel_audio.deepzoom.deepzoom_set``) beyond
+    that. ``x``/``y`` should be strings (or ``mpmath.mpf``) once
+    ``scale`` exceeds ``MAX_SAFE_SCALE``.
     """
-    _, _, z = mandelbrot_set(float(x), float(y), N=N, maxiter=maxiter, scale=scale)
+    if scale <= MAX_SAFE_SCALE:
+        _, _, z = mandelbrot_set(float(x), float(y), N=N, maxiter=maxiter, scale=scale)
+    else:
+        _, _, z = deepzoom_set(x, y, N=N, maxiter=maxiter, scale=scale)
     return z
 
 
@@ -176,9 +181,10 @@ def render_reactive_video(
     need the full count to render correctly. Pass ``min_maxiter =
     maxiter`` to disable this and use a fixed count for every frame.
 
-    ``end_scale`` beyond ``mandel_audio.fractal.MAX_SAFE_SCALE`` (~45)
-    is not supported here (see ``render_frame``); a deep-zoom renderer
-    is a separate follow-up.
+    ``x``/``y`` should be strings (or ``mpmath.mpf``) if ``end_scale``
+    exceeds ``mandel_audio.fractal.MAX_SAFE_SCALE`` (~45) -- past that,
+    ``render_frame`` switches to the perturbation-based deep-zoom
+    renderer automatically.
 
     ``youtube``: re-encode the final mux at YouTube's recommended
     bitrate for the render's resolution (``youtube_video_bitrate``),
@@ -187,15 +193,6 @@ def render_reactive_video(
     larger-than-necessary for delivery) intermediate video stream
     through untouched and muxes audio at ffmpeg's default AAC bitrate.
     """
-    if end_scale > MAX_SAFE_SCALE:
-        import warnings
-
-        warnings.warn(
-            f"end_scale={end_scale} exceeds float64 precision limits "
-            f"(~{MAX_SAFE_SCALE}); late frames will degrade into blocks.",
-            stacklevel=2,
-        )
-
     with tempfile.TemporaryDirectory() as tmp:
         if audio_path is not None:
             features = analyze_file(audio_path, fps=fps, sr=sr)

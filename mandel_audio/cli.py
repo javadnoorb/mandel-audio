@@ -5,6 +5,7 @@ Subcommands:
 * ``mandel-audio render`` — render a Mandelbrot view to a PNG.
 * ``mandel-audio video`` — render a music-reactive zoom video.
 * ``mandel-audio sonify`` — sonify a point's orbit to a WAV file.
+* ``mandel-audio deepzoom`` — render a view past float64 zoom limits.
 """
 
 from __future__ import annotations
@@ -12,8 +13,10 @@ from __future__ import annotations
 import argparse
 
 from mandel_audio.audio import orbit_to_audio, save_wav
+from mandel_audio.deepzoom import deepzoom_set
+from mandel_audio.fractal import MAX_SAFE_SCALE
 from mandel_audio.reactive import render_reactive_video
-from mandel_audio.render import mandelbrot_image
+from mandel_audio.render import mandelbrot_image, render_grid_image
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -99,6 +102,23 @@ def build_parser() -> argparse.ArgumentParser:
         "-o", "--output", type=str, default="orbit.wav", help="output file path"
     )
 
+    deepzoom_p = sub.add_parser(
+        "deepzoom", help="Render a view past float64 zoom limits (perturbation theory)."
+    )
+    deepzoom_p.add_argument(
+        "-x", type=str, required=True, help="center real part (string, for full precision)"
+    )
+    deepzoom_p.add_argument(
+        "-y", type=str, required=True, help="center imaginary part (string, for full precision)"
+    )
+    deepzoom_p.add_argument("--scale", type=float, required=True, help="log2 zoom factor")
+    deepzoom_p.add_argument("--maxiter", type=int, default=2000, help="max iterations")
+    deepzoom_p.add_argument("-N", type=int, default=1000, help="grid resolution (N x N)")
+    deepzoom_p.add_argument("--cmap", type=str, default="gnuplot2", help="matplotlib colormap")
+    deepzoom_p.add_argument(
+        "-o", "--output", type=str, default="deepzoom.png", help="output file path"
+    )
+
     return parser
 
 
@@ -140,6 +160,17 @@ def main(argv: list[str] | None = None) -> None:
             args.x, args.y, duration=args.duration, sr=args.sr, maxiter=args.maxiter
         )
         save_wav(args.output, audio, sr=args.sr)
+        print(f"wrote {args.output}")
+
+    elif args.command == "deepzoom":
+        if args.scale <= MAX_SAFE_SCALE:
+            print(
+                f"note: scale={args.scale} is within float64 precision "
+                f"(<= {MAX_SAFE_SCALE}); `render` would work equally well here."
+            )
+        _, _, z = deepzoom_set(args.x, args.y, N=args.N, maxiter=args.maxiter, scale=args.scale)
+        fig = render_grid_image(z, cmap=args.cmap)
+        fig.savefig(args.output, bbox_inches="tight", pad_inches=0)
         print(f"wrote {args.output}")
 
 

@@ -70,10 +70,25 @@ mandel-audio sonify -x -0.74529 -y 0.113075 --duration 5 -o orbit.wav
 - points near the **boundary** wander chaotically → noise-like textures;
 - points that **escape quickly** → a short chirp.
 
-`scale` is a log2 zoom factor (each +1 halves the viewport). Float64
-precision caps `--end-scale` at roughly `45`; a perturbation-based
-deep-zoom renderer that goes past that is a planned follow-up (see
-Roadmap).
+`scale` is a log2 zoom factor (each +1 halves the viewport). Past
+`scale≈45`, float64 precision runs out; `--end-scale`/`--scale` beyond
+that transparently switches to perturbation theory (see Deep zoom).
+
+### Deep zoom
+
+Past `scale=45`, rendering switches to perturbation theory: one
+high-precision reference orbit (via `mpmath`), plus a float64 delta
+per pixel — see `mandel_audio/deepzoom.py` for the math. Use
+`mandel-audio deepzoom` directly for a single deep frame; pass `x`/`y`
+as **quoted strings** with enough digits for your target scale (a
+plain float only carries ~15-17 significant digits, which defeats the
+point). `mandel-audio video` picks this up automatically once
+`--end-scale` crosses the threshold.
+
+This implementation does not do glitch correction/rebasing, so very
+deep or off-center zooms may show speckled artifacts; picking a
+reference point that doesn't escape quickly (near the zoom target,
+ideally just inside the set) keeps them minimal.
 
 ### Uploading to YouTube
 
@@ -133,20 +148,19 @@ ruff check .
 ```
 mandel_audio/
   fractal.py         # numba-jitted escape-time computation (float64)
-  audio.py            # orbit sonification (generative soundtrack fallback)
-  audio_analysis.py   # music -> per-frame bass/mid/treble/loudness/beat
-  reactive.py          # ties audio analysis to fractal color + zoom
-  render.py            # matplotlib rendering (single-frame PNGs)
-  cli.py               # `mandel-audio` command
+  deepzoom.py         # perturbation-based deep zoom, past float64 limits
+  audio.py             # orbit sonification (generative soundtrack fallback)
+  audio_analysis.py    # music -> per-frame bass/mid/treble/loudness/beat
+  reactive.py           # ties audio analysis to fractal color + zoom
+  render.py             # matplotlib rendering (single-frame PNGs)
+  cli.py                # `mandel-audio` command
 tests/
 ```
 
 ## Roadmap
 
 This is the core music-reactive video feature, plus the standalone
-`sonify` command. A couple of things are still deferred to smaller,
-separate follow-up PRs so they don't block reviewing this one:
+`sonify` command and deep zoom. One thing is still deferred to its own
+smaller follow-up PR so it doesn't block review:
 
-- **Deep zoom**: perturbation-based rendering past float64's
-  `scale≈45` limit, for extreme zooms.
 - **Web explorer**: an interactive WebGL/Web Audio browser version.
