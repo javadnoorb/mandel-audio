@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>mandel-audio</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="fractal"></canvas>
+
+  <div id="hud">
+    <div id="coords">x: 0, y: 0, scale: 0</div>
+    <div id="controls">
+      <label>palette
+        <select id="palette">
+          <option value="0">fire</option>
+          <option value="1">ocean</option>
+          <option value="2">electric</option>
+          <option value="3">gnuplot</option>
+        </select>
+      </label>
+      <label>max iter
+        <input id="maxiter" type="range" min="100" max="2000" step="50" value="500" />
+        <span id="maxiter-val">500</span>
+      </label>
+      <button id="reset">reset view</button>
+      <button id="share">copy link</button>
+    </div>
+    <div id="help">
+      scroll/pinch to zoom &middot; drag to pan
+    </div>
+    <div id="precision-warning" class="hidden">
+      approaching float32 precision limits — deep zoom (perturbation-based) is planned as a follow-up
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
