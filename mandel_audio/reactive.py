@@ -47,6 +47,26 @@ def zoom_schedule(
     return base + beat_punch * features.beat
 
 
+def maxiter_schedule(scales: np.ndarray, max_maxiter: int, min_maxiter: int = 100) -> np.ndarray:
+    """Per-frame max-iteration count, ramping with zoom depth.
+
+    Iteration count is the single largest lever on render time (linear
+    in ``maxiter``), but wide/shallow-zoom frames resolve correctly
+    with far fewer iterations than deep zoom needs to render fine
+    boundary detail -- using a fixed high ``maxiter`` for every frame
+    spends most of that budget on frames that don't need it. This
+    scales linearly from ``min_maxiter`` at ``scale=0`` up to
+    ``max_maxiter`` at the deepest scale actually reached (so a video
+    with a shallow ``end_scale`` doesn't unnecessarily hit the ceiling
+    early).
+    """
+    min_maxiter = min(min_maxiter, max_maxiter)
+    peak = max(float(scales.max()), 1e-9)
+    fraction = np.clip(scales, 0, None) / peak
+    values = min_maxiter + fraction * (max_maxiter - min_maxiter)
+    return np.maximum(min_maxiter, values.astype(np.int64))
+
+
 def blend_frame_color(
     z: np.ndarray,
     bass: float,
@@ -110,6 +130,7 @@ def render_reactive_video(
     fps: int = 24,
     N: int = 400,
     maxiter: int = 500,
+    min_maxiter: int = 100,
     max_duration: float | None = None,
     sr: int = 44100,
 ) -> str:
@@ -119,6 +140,12 @@ def render_reactive_video(
     driving the visuals and the video's soundtrack. Otherwise a
     soundtrack is generated from the target point's own orbit
     (``mandel_audio.audio.orbit_to_audio``) and analyzed the same way.
+
+    ``maxiter`` is the iteration count at the *deepest* frame reached;
+    earlier, shallower frames use progressively fewer iterations down
+    to ``min_maxiter`` (see ``maxiter_schedule``), since they don't
+    need the full count to render correctly. Pass ``min_maxiter =
+    maxiter`` to disable this and use a fixed count for every frame.
 
     ``end_scale`` beyond ``mandel_audio.fractal.MAX_SAFE_SCALE`` (~45)
     is not supported here (see ``render_frame``); a deep-zoom renderer
@@ -164,6 +191,7 @@ def render_reactive_video(
                 )
 
         scales = zoom_schedule(features, start_scale, end_scale, beat_punch)
+        maxiters = maxiter_schedule(scales, max_maxiter=maxiter, min_maxiter=min_maxiter)
 
         video_only = str(Path(tmp) / "video_only.mp4")
         writer = imageio.get_writer(
@@ -171,7 +199,7 @@ def render_reactive_video(
         )
         try:
             for i in range(features.num_frames):
-                z = render_frame(x, y, float(scales[i]), N=N, maxiter=maxiter)
+                z = render_frame(x, y, float(scales[i]), N=N, maxiter=int(maxiters[i]))
                 frame = blend_frame_color(
                     z,
                     float(features.bass[i]),

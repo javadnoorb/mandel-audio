@@ -3,7 +3,12 @@ import pytest
 
 from mandel_audio.audio_analysis import AudioFeatures
 from mandel_audio.fractal import mandelbrot_set_grid
-from mandel_audio.reactive import blend_frame_color, render_reactive_video, zoom_schedule
+from mandel_audio.reactive import (
+    blend_frame_color,
+    maxiter_schedule,
+    render_reactive_video,
+    zoom_schedule,
+)
 
 
 def _features(n=10, beat_at=None):
@@ -38,6 +43,37 @@ def test_zoom_schedule_beat_adds_a_punch():
     assert with_beat[5] > no_beat[5]
     # frames without a beat pulse are unaffected
     assert with_beat[0] == pytest.approx(no_beat[0])
+
+
+def test_maxiter_schedule_ramps_from_min_to_max():
+    scales = np.linspace(0, 10, 11)
+    schedule = maxiter_schedule(scales, max_maxiter=1000, min_maxiter=100)
+    assert schedule[0] == 100
+    assert schedule[-1] == 1000
+    assert np.all(np.diff(schedule) >= 0)
+
+
+def test_maxiter_schedule_uses_peak_scale_not_a_fixed_end_scale():
+    # A video whose zoom never gets very deep shouldn't have its early
+    # frames pay for iterations only needed at scale=45.
+    shallow_scales = np.linspace(0, 3, 11)
+    schedule = maxiter_schedule(shallow_scales, max_maxiter=1000, min_maxiter=100)
+    assert schedule[-1] == 1000  # still reaches the ceiling at its own peak
+    assert schedule[0] == 100
+
+
+def test_maxiter_schedule_handles_constant_scale():
+    # No divide-by-zero when every frame is at the same (e.g. zero) scale.
+    scales = np.zeros(5)
+    schedule = maxiter_schedule(scales, max_maxiter=500, min_maxiter=100)
+    assert np.all(np.isfinite(schedule))
+    assert np.all(schedule >= 100)
+
+
+def test_maxiter_schedule_min_greater_than_max_is_clamped():
+    scales = np.linspace(0, 5, 6)
+    schedule = maxiter_schedule(scales, max_maxiter=200, min_maxiter=800)
+    assert np.all(schedule <= 200)
 
 
 def test_blend_frame_color_inside_is_black():
