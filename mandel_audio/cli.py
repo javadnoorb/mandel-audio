@@ -76,6 +76,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="cap the video length in seconds (default: full track length, or 8s generated)",
     )
     video_p.add_argument(
+        "--youtube",
+        action="store_true",
+        help="re-encode for YouTube upload: bitrate matched to -N's resolution "
+        "(YouTube's recommended table), 384kbps/48kHz AAC audio, closed 2s GOP. "
+        "Without this, the default mux copies the (larger, higher-bitrate-than-"
+        "necessary) intermediate video stream through untouched.",
+    )
+    video_p.add_argument(
         "-o", "--output", type=str, default="zoom.mp4", help="output file path"
     )
 
@@ -123,6 +131,7 @@ def main(argv: list[str] | None = None) -> None:
             maxiter=args.maxiter,
             min_maxiter=args.min_maxiter,
             max_duration=args.max_duration,
+            youtube=args.youtube,
         )
         print(f"wrote {args.output}")
 
