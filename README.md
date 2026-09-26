@@ -1,10 +1,13 @@
 # mandel-audio
 
-Explore the Mandelbrot set — visually, and (in upcoming PRs) sonically.
+Render a Mandelbrot zoom video that **reacts to music**: color blends
+shift with the track's bass/mid/treble balance, brightness tracks
+loudness, and detected beats punch the zoom forward.
 
-This is a numba-accelerated Mandelbrot renderer. Points inside the set
-return `-1` (distinct from points that escape immediately); points that
-escape get a smoothed, continuous escape count for banding-free coloring.
+This is a numba-accelerated Mandelbrot renderer under the hood. Points
+inside the set return `-1` (distinct from points that escape
+immediately); points that escape get a smoothed, continuous escape
+count for banding-free coloring.
 
 ## Install
 
@@ -16,8 +19,16 @@ pip install -e ".[dev]"
 ## Usage
 
 ```bash
-# CLI: render a PNG
-mandel-audio -x -0.74529 -y 0.113075 --scale 8 --maxiter 2000 -o zoom.png
+# the main event: a zoom video that reacts to a music file
+mandel-audio video -x -0.74529 -y 0.113075 --audio-file song.mp3 \
+                    --end-scale 15 -o zoom.mp4
+
+# no music? a soundtrack is generated from the target point's own
+# orbit, and the video reacts to that instead
+mandel-audio video -x -0.74529 -y 0.113075 --end-scale 8 -o zoom.mp4
+
+# render a single PNG
+mandel-audio render -x -0.74529 -y 0.113075 --scale 8 --maxiter 2000 -o zoom.png
 
 # library
 python -c "
@@ -27,9 +38,32 @@ fig.savefig('mandelbrot.png')
 "
 ```
 
+### Music-reactive video
+
+`mandel-audio video` is the core feature. Give it `--audio-file` and it:
+
+1. Analyzes the track (`mandel_audio/audio_analysis.py`, via
+   `librosa`) into per-frame **bass/mid/treble energy**, **loudness**,
+   and **beat** pulses, aligned to the video's `--fps`.
+2. Colors each frame as a blend of three palettes — `inferno` (bass),
+   `viridis` (mid), `cool` (treble) — weighted by that frame's band
+   energies, so a bass-heavy passage skews warm and a treble-heavy one
+   skews cool. Brightness tracks loudness.
+3. Adds a short extra zoom-in (`--beat-punch`) on every detected beat,
+   on top of a steady `--start-scale` → `--end-scale` ramp.
+4. Muxes the original track back in as the soundtrack (via `ffmpeg`,
+   bundled through `imageio-ffmpeg` — no system install needed).
+
+Without `--audio-file`, a soundtrack is generated from the target
+point's own orbit (`mandel_audio.audio.orbit_to_audio`, sonifying the
+orbit's real/imaginary parts as left/right audio channels) and fed
+through the *same* analysis pipeline, so the video is still reactive —
+just to a fractal-generated track instead of a real song.
+
 `scale` is a log2 zoom factor (each +1 halves the viewport). Float64
-precision caps useful zoom at roughly `scale=45`; a deep-zoom
-(perturbation-based) renderer is planned as a follow-up.
+precision caps `--end-scale` at roughly `45`; a perturbation-based
+deep-zoom renderer that goes past that is a planned follow-up (see
+Roadmap).
 
 ## Development
 
@@ -42,19 +76,24 @@ ruff check .
 
 ```
 mandel_audio/
-  fractal.py   # numba-jitted escape-time computation
-  render.py    # matplotlib rendering
-  cli.py       # `mandel-audio` command
+  fractal.py         # numba-jitted escape-time computation (float64)
+  audio.py            # orbit sonification (generative soundtrack fallback)
+  audio_analysis.py   # music -> per-frame bass/mid/treble/loudness/beat
+  reactive.py          # ties audio analysis to fractal color + zoom
+  render.py            # matplotlib rendering (single-frame PNGs)
+  cli.py               # `mandel-audio` command
 tests/
 ```
 
 ## Roadmap
 
-This repo is being revamped across several PRs:
+This is the core music-reactive video feature. A few things are
+deliberately deferred to smaller, separate follow-up PRs so they don't
+block reviewing this one:
 
-1. **Foundation** (this PR): fixed bugs, package restructure, tests, CI,
-   notebook removed.
-2. **Audio**: sonify orbits (escape trajectories) to WAV.
-3. **Web app**: a WebGL + Web Audio interactive explorer.
-4. **Deep zoom & video**: perturbation-based deep zoom and rendered
-   zoom videos with a generated soundtrack.
+- **Deep zoom**: perturbation-based rendering past float64's
+  `scale≈45` limit, for extreme zooms.
+- **`sonify` CLI command**: expose `orbit_to_audio` as a standalone
+  "orbit → WAV" utility, independent of the video pipeline (it's
+  already used internally as the no-`--audio-file` fallback above).
+- **Web explorer**: an interactive WebGL/Web Audio browser version.

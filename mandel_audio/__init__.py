@@ -1,6 +1,9 @@
-"""mandel-audio: explore the Mandelbrot set, visually and (soon) sonically."""
+"""mandel-audio: a fractal zoom video renderer that reacts to music."""
 
+from mandel_audio.audio import compute_orbit, orbit_to_audio, save_wav
+from mandel_audio.audio_analysis import AudioFeatures, analyze, analyze_file, load_audio
 from mandel_audio.fractal import mandelbrot, mandelbrot_set, mandelbrot_set_grid
+from mandel_audio.reactive import render_reactive_video
 from mandel_audio.render import mandelbrot_image
 
 __all__ = [
@@ -8,6 +11,14 @@ __all__ = [
     "mandelbrot_set",
     "mandelbrot_set_grid",
     "mandelbrot_image",
+    "compute_orbit",
+    "orbit_to_audio",
+    "save_wav",
+    "AudioFeatures",
+    "analyze",
+    "analyze_file",
+    "load_audio",
+    "render_reactive_video",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
