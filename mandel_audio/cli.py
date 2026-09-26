@@ -4,12 +4,14 @@ Subcommands:
 
 * ``mandel-audio render`` — render a Mandelbrot view to a PNG.
 * ``mandel-audio video`` — render a music-reactive zoom video.
+* ``mandel-audio sonify`` — sonify a point's orbit to a WAV file.
 """
 
 from __future__ import annotations
 
 import argparse
 
+from mandel_audio.audio import orbit_to_audio, save_wav
 from mandel_audio.reactive import render_reactive_video
 from mandel_audio.render import mandelbrot_image
 
@@ -64,6 +66,18 @@ def build_parser() -> argparse.ArgumentParser:
         "-o", "--output", type=str, default="zoom.mp4", help="output file path"
     )
 
+    sonify_p = sub.add_parser(
+        "sonify", help="Sonify a point's orbit to a WAV file (standalone, not video-related)."
+    )
+    sonify_p.add_argument("-x", type=float, default=-0.74529, help="orbit seed real part")
+    sonify_p.add_argument("-y", type=float, default=0.113075, help="orbit seed imaginary part")
+    sonify_p.add_argument("--duration", type=float, default=3.0, help="output duration, seconds")
+    sonify_p.add_argument("--sr", type=int, default=44100, help="sample rate")
+    sonify_p.add_argument("--maxiter", type=int, default=2000, help="max orbit iterations")
+    sonify_p.add_argument(
+        "-o", "--output", type=str, default="orbit.wav", help="output file path"
+    )
+
     return parser
 
 
@@ -96,6 +110,13 @@ def main(argv: list[str] | None = None) -> None:
             maxiter=args.maxiter,
             max_duration=args.max_duration,
         )
+        print(f"wrote {args.output}")
+
+    elif args.command == "sonify":
+        audio = orbit_to_audio(
+            args.x, args.y, duration=args.duration, sr=args.sr, maxiter=args.maxiter
+        )
+        save_wav(args.output, audio, sr=args.sr)
         print(f"wrote {args.output}")
 
 
