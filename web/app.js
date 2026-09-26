@@ -1,5 +1,4 @@
 import { VERTEX_SRC, FRAGMENT_SRC } from "./shaders.js";
-import { playOrbit, computeOrbit } from "./orbit-audio.js";
 
 // GPU fragment shaders here run on 32-bit floats, which have far less
 // precision than the float64 used on the Python/numba side. This caps
@@ -8,14 +7,12 @@ const MAX_SAFE_SCALE_WEB = 22;
 const PRECISION_WARNING_SCALE = 18;
 
 const canvas = document.getElementById("fractal");
-const overlay = document.getElementById("overlay");
 const gl = canvas.getContext("webgl2");
 if (!gl) {
   document.body.innerHTML =
     '<p style="color:#eee;font-family:sans-serif;padding:2em">WebGL2 is not available in this browser.</p>';
   throw new Error("WebGL2 unavailable");
 }
-const octx = overlay.getContext("2d");
 
 // ---- state, seeded from URL query params for shareable links ----
 const params = new URLSearchParams(location.search);
@@ -27,12 +24,6 @@ const state = {
   palette: parseInt(params.get("palette") ?? "0", 10),
 };
 const DEFAULT_STATE = { x: -0.5, y: 0.0, scale: 0, maxiter: 500, palette: 0 };
-
-let audioCtx = null;
-function getAudioCtx() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  return audioCtx;
-}
 
 // ---- shader setup ----
 function compile(type, src) {
@@ -70,10 +61,8 @@ const uPalette = gl.getUniformLocation(program, "u_palette");
 
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  for (const cv of [canvas, overlay]) {
-    cv.width = Math.floor(window.innerWidth * dpr);
-    cv.height = Math.floor(window.innerHeight * dpr);
-  }
+  canvas.width = Math.floor(window.innerWidth * dpr);
+  canvas.height = Math.floor(window.innerHeight * dpr);
   gl.viewport(0, 0, canvas.width, canvas.height);
   render();
 }
@@ -130,7 +119,7 @@ function redraw() {
   syncUrl();
 }
 
-// ---- interaction: wheel to zoom, drag to pan, click to sonify ----
+// ---- interaction: wheel to zoom, drag to pan ----
 let dragging = false;
 let dragged = false;
 let lastX = 0, lastY = 0;
@@ -158,7 +147,6 @@ canvas.addEventListener("pointerdown", (e) => {
 });
 
 canvas.addEventListener("pointermove", (e) => {
-  octx.clearRect(0, 0, overlay.width, overlay.height);
   if (!dragging) return;
   const dx = e.clientX - lastX;
   const dy = e.clientY - lastY;
@@ -173,61 +161,9 @@ canvas.addEventListener("pointermove", (e) => {
   redraw();
 });
 
-canvas.addEventListener("pointerup", (e) => {
+canvas.addEventListener("pointerup", () => {
   dragging = false;
-  if (!dragged) {
-    sonifyAt(e.clientX, e.clientY);
-  }
 });
-
-function sonifyAt(px, py) {
-  const [cx, cy] = screenToComplex(px, py);
-  const ctx = getAudioCtx();
-  if (ctx.state === "suspended") ctx.resume();
-
-  const duration = parseFloat(document.getElementById("duration").value);
-  const maxiter = 2000;
-  playOrbit(ctx, cx, cy, { duration, maxiter });
-
-  drawMarker(px, py, cx, cy);
-}
-
-function drawMarker(px, py, cx, cy) {
-  const dpr = overlay.width / window.innerWidth;
-  const x = px * dpr;
-  const y = py * dpr;
-  octx.clearRect(0, 0, overlay.width, overlay.height);
-  octx.strokeStyle = "#ffffff";
-  octx.lineWidth = 2 * dpr;
-  octx.beginPath();
-  octx.arc(x, y, 10 * dpr, 0, Math.PI * 2);
-  octx.stroke();
-  // fade the marker out
-  let alpha = 1;
-  const fadeStep = () => {
-    alpha -= 0.03;
-    if (alpha <= 0) {
-      octx.clearRect(0, 0, overlay.width, overlay.height);
-      return;
-    }
-    octx.clearRect(0, 0, overlay.width, overlay.height);
-    octx.globalAlpha = alpha;
-    octx.strokeStyle = "#ffffff";
-    octx.lineWidth = 2 * dpr;
-    octx.beginPath();
-    octx.arc(x, y, 10 * dpr, 0, Math.PI * 2);
-    octx.stroke();
-    octx.globalAlpha = 1;
-    requestAnimationFrame(fadeStep);
-  };
-  requestAnimationFrame(fadeStep);
-
-  // orbit escape info, shown briefly via title attribute / console for now
-  const { real } = computeOrbit(cx, cy, 2000);
-  const label = real.length >= 2000 ? "inside the set" : `escaped after ${real.length} steps`;
-  coordsEl.textContent =
-    `x: ${cx.toFixed(6)}, y: ${cy.toFixed(6)}, scale: ${state.scale.toFixed(2)} — ${label}`;
-}
 
 // ---- controls ----
 const maxiterInput = document.getElementById("maxiter");
@@ -239,13 +175,6 @@ maxiterInput.addEventListener("input", () => {
   maxiterVal.textContent = state.maxiter;
   redraw();
 });
-
-const durationInput = document.getElementById("duration");
-const durationVal = document.getElementById("duration-val");
-durationInput.addEventListener("input", () => {
-  durationVal.textContent = `${parseFloat(durationInput.value).toFixed(1)}s`;
-});
-durationVal.textContent = `${parseFloat(durationInput.value).toFixed(1)}s`;
 
 const paletteSelect = document.getElementById("palette");
 paletteSelect.value = state.palette;
