@@ -96,7 +96,7 @@ re-encoding step, instead of guessing at a bitrate yourself.
 
 ### Performance
 
-Rendering is CPU-bound (no GPU use); two things keep it reasonably
+Rendering is CPU-bound (no GPU use); a few things keep it reasonably
 fast on a handful of cores:
 
 - **Adaptive `--maxiter`** (`reactive.maxiter_schedule`): iteration
@@ -120,6 +120,32 @@ fast on a handful of cores:
 Measured together on that same machine: a 1080x1080/20s clip that took
 5m25s before these changes rendered in 3m4s after (~1.8x), same visual
 quality.
+
+### Scaling across CPU cores
+
+Frames are fully independent (each depends only on its own scale/
+maxiter/band weights, not on neighboring frames), so rendering splits
+across processes with `--workers N`:
+
+```bash
+mandel-audio video -x -0.74529 -y 0.113075 --audio-file song.mp3 --workers 4 -o zoom.mp4
+```
+
+Each worker is capped to `cpu_count() // workers` internal numba
+threads, so the total thread count across all workers stays within
+the machine's core count rather than oversubscribing it.
+
+Measured on this project's 4-core dev machine (700x700, 192 frames):
+`--workers 4` rendered in **28.8s vs. 48.2s at `--workers 1` (1.67x
+faster)** — output verified byte-identical between the two. That's a
+bigger win than expected even on a box with no idle cores to add:
+splitting a frame's numba `prange` synchronization/scheduling
+overhead across many small frame-sized parallel regions (once per
+frame, 192 times) costs more than expected, and letting each of 4
+single-threaded worker processes just crank through its own frames
+avoids that entirely. On a machine with more cores than one frame's
+internal parallelism can use by itself, `--workers` should scale
+further still.
 
 ## Development
 

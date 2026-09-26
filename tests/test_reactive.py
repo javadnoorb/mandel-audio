@@ -10,8 +10,10 @@ from mandel_audio.fractal import mandelbrot_set_grid
 from mandel_audio.reactive import (
     YOUTUBE_AUDIO_BITRATE_KBPS,
     YOUTUBE_AUDIO_SAMPLE_RATE,
+    _render_and_color_one_frame,
     blend_frame_color,
     maxiter_schedule,
+    render_frame,
     render_reactive_video,
     youtube_video_bitrate,
     zoom_schedule,
@@ -101,6 +103,69 @@ def test_blend_frame_color_loudness_dims_brightness():
     bright = blend_frame_color(z, bass=0.5, mid=0.5, treble=0.0, loudness=1.0).astype(int)
     dim = blend_frame_color(z, bass=0.5, mid=0.5, treble=0.0, loudness=0.0).astype(int)
     assert bright.sum() >= dim.sum()
+
+
+def test_render_and_color_one_frame_matches_sequential_path():
+    # The worker function used by workers>1 should compute exactly what
+    # the sequential (workers=1) loop would for the same inputs.
+    x, y, scale, maxiter, N = -0.5, 0.0, 3.0, 150, 24
+    bass, mid, treble, loudness = 0.3, 0.4, 0.3, 0.7
+
+    expected = blend_frame_color(
+        render_frame(x, y, scale, N=N, maxiter=maxiter), bass, mid, treble, loudness
+    )
+    actual = _render_and_color_one_frame(
+        (x, y, scale, maxiter, N, bass, mid, treble, loudness, None)
+    )
+    np.testing.assert_array_equal(actual, expected)
+
+
+def test_render_and_color_one_frame_respects_numba_threads_cap():
+    # Passing an explicit thread cap shouldn't change the result, only
+    # how many numba threads compute it.
+    task_capped = (-0.5, 0.0, 3.0, 150, 24, 0.3, 0.4, 0.3, 0.7, 1)
+    task_uncapped = (-0.5, 0.0, 3.0, 150, 24, 0.3, 0.4, 0.3, 0.7, None)
+    np.testing.assert_array_equal(
+        _render_and_color_one_frame(task_capped),
+        _render_and_color_one_frame(task_uncapped),
+    )
+
+
+def test_render_reactive_video_workers_matches_sequential(tmp_path):
+    # workers>1 must produce the identical frame sequence to workers=1,
+    # not just "a plausible-looking video" -- decode both back to
+    # frames and compare pixels (rather than raw file bytes, which
+    # could differ on encoder metadata like timestamps even for
+    # pixel-identical input).
+    import imageio.v2 as imageio
+
+    kwargs = dict(
+        x=-0.5,
+        y=0.0,
+        audio_path=None,
+        start_scale=0.0,
+        end_scale=1.5,
+        fps=4,
+        N=20,
+        maxiter=60,
+        max_duration=1.0,
+    )
+    out_seq = tmp_path / "sequential.mp4"
+    out_par = tmp_path / "parallel.mp4"
+    render_reactive_video(output_path=str(out_seq), workers=1, **kwargs)
+    render_reactive_video(output_path=str(out_par), workers=2, **kwargs)
+
+    # imageio's ffmpeg reader doesn't know the frame count upfront for
+    # these short clips (reports nframes=inf), so iterating the reader
+    # directly (`list(reader)`) never hits StopIteration and reads
+    # unbounded -- read exactly the frame count we rendered instead.
+    expected_frames = int(kwargs["max_duration"] * kwargs["fps"])
+    reader_seq = imageio.get_reader(str(out_seq))
+    reader_par = imageio.get_reader(str(out_par))
+    for i in range(expected_frames):
+        # h264 is lossy, so allow a small per-pixel tolerance rather
+        # than requiring exact equality post-compression.
+        np.testing.assert_allclose(reader_seq.get_data(i), reader_par.get_data(i), atol=2)
 
 
 def test_render_reactive_video_generative_fallback_smoke(tmp_path):
