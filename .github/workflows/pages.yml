@@ -26,6 +26,16 @@ jobs:
       - uses: actions/configure-pages@v5
         with:
           enablement: true
+      - name: Cache-bust local asset references
+        # Browsers cache style.css/app.js/shaders.js by URL, so a
+        # same-named file can serve stale content after a redeploy
+        # until the cache entry expires. Tag each local reference with
+        # the commit SHA so every deploy gets a fresh URL.
+        run: |
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          sed -i "s/style\.css\"/style.css?v=$SHA_SHORT\"/" web/index.html
+          sed -i "s/app\.js\"/app.js?v=$SHA_SHORT\"/" web/index.html
+          sed -i "s#\./shaders\.js\"#./shaders.js?v=$SHA_SHORT\"#" web/app.js
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web
