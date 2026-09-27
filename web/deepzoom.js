@@ -12,8 +12,11 @@
 //
 // Known limitation (same as the Python version): no "glitch
 // correction" for pixels whose true orbit diverges too far from the
-// reference. Picking a reference near the view center (the default)
-// keeps this manageable for interactive use.
+// reference. findGoodReference (below) mitigates the common case --
+// an unlucky view center that happens to escape early -- by sampling
+// nearby candidates, but a genuinely bad neighborhood (e.g. deep in
+// open exterior, far from any boundary) still degrades gracefully via
+// the "reference escaped early" warning rather than being corrected.
 
 import { ddAdd, ddcSquare, ddFromNumber, ddToNumber } from "./bignum.js";
 
@@ -50,4 +53,42 @@ export function referenceOrbit(cRe, cIm, maxiter) {
     z = { re: ddAdd(z2.re, c.re), im: ddAdd(z2.im, c.im) };
   }
   return { real: real.subarray(0, count), imag: imag.subarray(0, count), escaped, count };
+}
+
+// Small ring of candidate offsets (as fractions of searchRadius) tried
+// around the requested center when it escapes early. Every pixel's
+// iteration budget in the deep-zoom shader is capped by however long
+// the *reference* orbit itself survives (see DEEP_FRAGMENT_SRC), so a
+// reference that escapes well before maxiter silently truncates detail
+// for the entire view, not just pixels far from it -- an unlucky view
+// center (e.g. just outside the set) otherwise degrades the whole
+// render, not only itself.
+const CANDIDATE_OFFSETS = [
+  [1, 0], [-1, 0], [0, 1], [0, -1],
+  [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7],
+];
+
+// Picks a reference point near (centerRe, centerIm) whose orbit survives
+// as long as possible (ideally the full maxiter), searching a small ring
+// of nearby candidates when the center itself escapes early. Returns
+// { re, im, orbit } -- re/im are dd values, possibly different from the
+// input if a nearby candidate did better.
+export function findGoodReference(centerRe, centerIm, maxiter, searchRadius) {
+  let bestRe = centerRe;
+  let bestIm = centerIm;
+  let best = referenceOrbit(centerRe, centerIm, maxiter);
+  if (!best.escaped) return { re: bestRe, im: bestIm, orbit: best };
+
+  for (const [dx, dy] of CANDIDATE_OFFSETS) {
+    const candRe = ddAdd(centerRe, ddFromNumber(dx * searchRadius));
+    const candIm = ddAdd(centerIm, ddFromNumber(dy * searchRadius));
+    const orbit = referenceOrbit(candRe, candIm, maxiter);
+    if (!orbit.escaped || orbit.count > best.count) {
+      bestRe = candRe;
+      bestIm = candIm;
+      best = orbit;
+      if (!best.escaped) break; // can't do better than "never escapes"
+    }
+  }
+  return { re: bestRe, im: bestIm, orbit: best };
 }
