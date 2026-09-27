@@ -29,6 +29,17 @@ function maxScaleForPrecision(marginUlps, cx, cy) {
 const HARD_CAP_MARGIN_ULPS = 1; // beyond this, pixels are provably indistinguishable
 const WARNING_MARGIN_ULPS = 8; // warn with some headroom before that cliff
 
+// The "deep zoom" checkbox only means "allowed to use the perturbation
+// renderer past the float32 cliff" -- it should stay a no-op while the
+// direct renderer can still show the current view exactly. Otherwise
+// panning around at an ordinary, shallow zoom can land the view center
+// on some unrelated fast-escaping point and spuriously trigger the
+// perturbation path's reference-orbit machinery (and its "reference
+// escaped" warning) for a view that never needed it.
+function usingDeepRenderer() {
+  return state.deepZoom && state.scale > maxScaleForPrecision(HARD_CAP_MARGIN_ULPS, state.x, state.y);
+}
+
 const canvas = document.getElementById("fractal");
 const gl = canvas.getContext("webgl2");
 if (!gl) {
@@ -117,7 +128,8 @@ function resize() {
 }
 
 function render() {
-  if (state.deepZoom) {
+  if (usingDeepRenderer()) {
+    rebaseReferenceIfNeeded(); // lazily build/refresh the reference orbit only once actually needed
     gl.useProgram(deepProgram);
     gl.uniform2f(uResolutionDeep, canvas.width, canvas.height);
     const [dxr, dyr] = centerDeltaFloat();
@@ -230,7 +242,7 @@ const coordsEl = document.getElementById("coords");
 const warningEl = document.getElementById("precision-warning");
 const deepWarningEl = document.getElementById("deepzoom-warning");
 function updateHud() {
-  if (state.deepZoom) {
+  if (usingDeepRenderer()) {
     coordsEl.textContent =
       `x: ${state.x.toFixed(10)}, y: ${state.y.toFixed(10)}, scale: ${state.scale.toFixed(2)} (deep)`;
     warningEl.classList.add("hidden");
@@ -277,6 +289,8 @@ function redraw() {
 
 // Restore a deep-zoom view from URL params (full dd precision if
 // present), or bootstrap one from the current shallow x/y otherwise.
+// The reference orbit itself is built lazily by render() the first
+// time it's actually needed (see usingDeepRenderer/rebaseReferenceIfNeeded).
 if (state.deepZoom) {
   const xhi = params.get("xhi");
   const yhi = params.get("yhi");
@@ -290,7 +304,6 @@ if (state.deepZoom) {
   }
   state.x = ddToNumber(viewCenterDD.re);
   state.y = ddToNumber(viewCenterDD.im);
-  rebaseReference();
 }
 
 // ---- interaction: wheel to zoom, drag to pan, pinch to zoom+pan ----
@@ -321,7 +334,7 @@ function zoomAtDeep(targetDD, newScale) {
     re: ddSub(targetDD.re, ddMul(diffRe, ratio)),
     im: ddSub(targetDD.im, ddMul(diffIm, ratio)),
   };
-  rebaseReferenceIfNeeded();
+  // Reference orbit is (re)built lazily in render() -- see usingDeepRenderer.
   state.x = ddToNumber(viewCenterDD.re);
   state.y = ddToNumber(viewCenterDD.im);
 }
@@ -406,7 +419,7 @@ canvas.addEventListener("pointermove", (e) => {
       re: ddSub(viewCenterDD.re, ddFromNumber(deltaXc)),
       im: ddAdd(viewCenterDD.im, ddFromNumber(deltaYc)),
     };
-    rebaseReferenceIfNeeded();
+    // Reference orbit is (re)built lazily in render() -- see usingDeepRenderer.
     state.x = ddToNumber(viewCenterDD.re);
     state.y = ddToNumber(viewCenterDD.im);
   } else {
@@ -443,7 +456,10 @@ maxiterVal.textContent = state.maxiter;
 maxiterInput.addEventListener("input", () => {
   state.maxiter = parseInt(maxiterInput.value, 10);
   maxiterVal.textContent = state.maxiter;
-  if (state.deepZoom) rebaseReference(); // reference orbit length depends on maxiter
+  // Reference orbit length depends on maxiter; render()'s lazy rebase only
+  // triggers on view-center drift, so force it explicitly here when a
+  // stale orbit is actually in use.
+  if (usingDeepRenderer()) rebaseReference();
   redraw();
 });
 
@@ -461,7 +477,10 @@ deepzoomCheckbox.addEventListener("change", () => {
   if (state.deepZoom) {
     viewCenterDD = ddcFromNumbers(state.x, state.y);
     refOrbitData = null;
-    rebaseReference();
+    refCenterDD = null;
+    // Reference orbit is only built once actually needed (see
+    // usingDeepRenderer) -- at ordinary zoom this is a no-op until you
+    // zoom in past what the direct renderer can show.
   } else {
     // the direct float32 shader can't usefully render past its own
     // precision cliff -- drop back to a scale it can actually show.
@@ -478,7 +497,7 @@ document.getElementById("reset").addEventListener("click", () => {
   if (state.deepZoom) {
     viewCenterDD = ddcFromNumbers(state.x, state.y);
     refOrbitData = null;
-    rebaseReference();
+    refCenterDD = null;
   }
   redraw();
 });
