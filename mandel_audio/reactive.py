@@ -25,6 +25,7 @@ import imageio.v2 as imageio
 import imageio_ffmpeg
 import numpy as np
 from matplotlib import colormaps
+from tqdm import tqdm
 
 from mandel_audio.audio import orbit_to_audio, save_wav
 from mandel_audio.audio_analysis import AudioFeatures, analyze, analyze_file
@@ -274,6 +275,15 @@ def render_reactive_video(
         writer = imageio.get_writer(
             video_only, fps=fps, codec="libx264", quality=8, macro_block_size=None
         )
+        # Progress is weighted by each frame's maxiter (known up front from
+        # maxiter_schedule), not by raw frame count: later, deeper-zoom
+        # frames cost substantially more than early ones (see
+        # maxiter_schedule's ramp), so a plain frames-done/total estimate
+        # would keep revising its ETA upward as the render approaches the
+        # end. Weighting by iteration count gives a stable ETA from the
+        # first frame instead.
+        frame_weights = maxiters.astype(np.int64)
+        pbar = tqdm(total=int(frame_weights.sum()), unit="iter", desc="rendering frames")
         try:
             if workers <= 1:
                 for i in range(features.num_frames):
@@ -286,6 +296,7 @@ def render_reactive_video(
                         float(features.loudness[i]),
                     )
                     writer.append_data(frame)
+                    pbar.update(int(frame_weights[i]))
             else:
                 threads_per_worker = max(1, (os.cpu_count() or 1) // workers)
                 tasks = [
@@ -320,10 +331,12 @@ def render_reactive_video(
                 # same for combining it with multiprocessing).
                 ctx = multiprocessing.get_context("spawn")
                 with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as executor:
-                    for frame in executor.map(_render_and_color_one_frame, tasks):
+                    for i, frame in enumerate(executor.map(_render_and_color_one_frame, tasks)):
                         writer.append_data(frame)
+                        pbar.update(int(frame_weights[i]))
         finally:
             writer.close()
+            pbar.close()
 
         # Trim the audio track to the (possibly max_duration-capped)
         # video length, then mux.
