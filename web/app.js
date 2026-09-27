@@ -119,34 +119,73 @@ function redraw() {
   syncUrl();
 }
 
-// ---- interaction: wheel to zoom, drag to pan ----
-let dragging = false;
-let dragged = false;
-let lastX = 0, lastY = 0;
+// ---- interaction: wheel to zoom, drag to pan, pinch to zoom+pan ----
+function zoomAt(cx, cy, newScale) {
+  newScale = Math.min(Math.max(newScale, 0), MAX_SAFE_SCALE_WEB);
+  const oldHw = halfWidth();
+  state.scale = newScale;
+  const newHw = halfWidth();
+  // keep the point under the cursor/pinch-midpoint fixed
+  state.x = cx - (cx - state.x) * (newHw / oldHw);
+  state.y = cy - (cy - state.y) * (newHw / oldHw);
+}
 
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
   const [cx, cy] = screenToComplex(e.clientX, e.clientY);
-  const delta = -e.deltaY * 0.0025;
-  const newScale = Math.min(Math.max(state.scale + delta, 0), MAX_SAFE_SCALE_WEB);
-  // keep the point under the cursor fixed
-  const oldHw = halfWidth();
-  state.scale = newScale;
-  const newHw = halfWidth();
-  state.x = cx - (cx - state.x) * (newHw / oldHw);
-  state.y = cy - (cy - state.y) * (newHw / oldHw);
+  zoomAt(cx, cy, state.scale - e.deltaY * 0.0025);
   redraw();
 }, { passive: false });
 
+let dragging = false;
+let dragged = false;
+let lastX = 0, lastY = 0;
+
+// Pointer Events report each touch as its own pointerId, so a single
+// map covers both mouse/single-finger drag and two-finger pinch.
+const activePointers = new Map();
+let pinchDist = null;
+
+function pointDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+function pointMidpoint(a, b) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
 canvas.addEventListener("pointerdown", (e) => {
-  dragging = true;
-  dragged = false;
-  lastX = e.clientX;
-  lastY = e.clientY;
   canvas.setPointerCapture(e.pointerId);
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (activePointers.size === 2) {
+    dragging = false;
+    const [a, b] = activePointers.values();
+    pinchDist = pointDistance(a, b);
+  } else if (activePointers.size === 1) {
+    dragging = true;
+    dragged = false;
+    lastX = e.clientX;
+    lastY = e.clientY;
+  }
 });
 
 canvas.addEventListener("pointermove", (e) => {
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (activePointers.size >= 2) {
+    const [a, b] = activePointers.values();
+    const newDist = pointDistance(a, b);
+    const mid = pointMidpoint(a, b);
+    const [cx, cy] = screenToComplex(mid.x, mid.y);
+    if (pinchDist) {
+      zoomAt(cx, cy, state.scale + Math.log2(newDist / pinchDist));
+      redraw();
+    }
+    pinchDist = newDist;
+    return;
+  }
+
   if (!dragging) return;
   const dx = e.clientX - lastX;
   const dy = e.clientY - lastY;
@@ -161,9 +200,22 @@ canvas.addEventListener("pointermove", (e) => {
   redraw();
 });
 
-canvas.addEventListener("pointerup", () => {
+function endPointer(e) {
+  activePointers.delete(e.pointerId);
+  pinchDist = null;
   dragging = false;
-});
+  if (activePointers.size === 1) {
+    // one finger still down after a pinch ends: resume single-finger pan
+    const [remaining] = activePointers.values();
+    dragging = true;
+    dragged = true;
+    lastX = remaining.x;
+    lastY = remaining.y;
+  }
+}
+
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointercancel", endPointer);
 
 // ---- controls ----
 const maxiterInput = document.getElementById("maxiter");

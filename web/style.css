@@ -18,6 +18,10 @@ html, body {
   left: 0;
   width: 100%;
   height: 100%;
+  /* Disable the browser's native pinch-to-zoom/pan gesture on the
+     canvas so touch input is handled entirely by our pointer-event
+     pinch/pan logic instead of scaling the whole page. */
+  touch-action: none;
 }
 
 #hud {
