@@ -615,3 +615,24 @@ document.getElementById("share")?.addEventListener("click", async () => {
     // URL bar already reflects the current view via history.replaceState.
   }
 });
+
+document.getElementById("copycoords")?.addEventListener("click", async () => {
+  // Same text as the HUD's coords line, so what's copied always matches
+  // what's on screen (including the "(deep)" tag when relevant).
+  const text = coordsEl?.textContent;
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    // Re-queried rather than captured from the event: event.currentTarget
+    // is cleared once dispatch finishes, which is over by the time this
+    // await resolves.
+    const btn = document.getElementById("copycoords");
+    if (btn) {
+      const original = btn.textContent;
+      btn.textContent = "copied!";
+      setTimeout(() => (btn.textContent = original), 1200);
+    }
+  } catch {
+    // clipboard API unavailable (e.g. insecure context) -- no-op.
+  }
+});
