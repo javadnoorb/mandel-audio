@@ -366,6 +366,7 @@ function zoomAtDeep(targetDD, newScale) {
 
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
+  stopAutoZoom();
   if (state.deepZoom) {
     const target = screenToComplexDeep(e.clientX, e.clientY);
     zoomAtDeep(target, state.scale - e.deltaY * 0.0025);
@@ -393,6 +394,7 @@ function pointMidpoint(a, b) {
 }
 
 canvas.addEventListener("pointerdown", (e) => {
+  stopAutoZoom();
   canvas.setPointerCapture(e.pointerId);
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -506,6 +508,7 @@ const deepzoomCheckbox = document.getElementById("deepzoom");
 if (deepzoomCheckbox) {
   deepzoomCheckbox.checked = state.deepZoom;
   deepzoomCheckbox.addEventListener("change", () => {
+    stopAutoZoom();
     state.deepZoom = deepzoomCheckbox.checked;
     if (state.deepZoom) {
       viewCenterDD = ddcFromNumbers(state.x, state.y);
@@ -523,7 +526,68 @@ if (deepzoomCheckbox) {
   });
 }
 
+// ---- auto zoom: continuously zoom in on the current view center,
+// automatically crossing into deep zoom once the direct renderer's own
+// precision cap is reached, until the deep-zoom cap is hit or the user
+// interacts manually (wheel/drag/pinch/checkbox/reset all stop it).
+const AUTO_ZOOM_RATE = 1.2; // log2 zoom factor per second
+let autoZoomActive = false;
+let autoZoomFrame = null;
+let autoZoomLastTs = null;
+const autoZoomBtn = document.getElementById("autozoom");
+
+function autoZoomStep(ts) {
+  if (!autoZoomActive) return;
+  if (autoZoomLastTs === null) autoZoomLastTs = ts;
+  const dt = (ts - autoZoomLastTs) / 1000;
+  autoZoomLastTs = ts;
+  const targetScale = state.scale + AUTO_ZOOM_RATE * dt;
+
+  if (state.deepZoom) {
+    zoomAtDeep({ re: viewCenterDD.re, im: viewCenterDD.im }, targetScale);
+  } else {
+    zoomAt(state.x, state.y, targetScale);
+  }
+  redraw();
+
+  const shallowCap = maxScaleForPrecision(HARD_CAP_MARGIN_ULPS, state.x, state.y);
+  if (!state.deepZoom && state.scale >= shallowCap - 1e-6) {
+    // Hit the direct renderer's precision cliff -- cross it automatically
+    // (next frame's zoomAtDeep) instead of just stalling here.
+    state.deepZoom = true;
+    if (deepzoomCheckbox) deepzoomCheckbox.checked = true;
+    viewCenterDD = ddcFromNumbers(state.x, state.y);
+    refOrbitData = null;
+    refCenterDD = null;
+  } else if (state.deepZoom && state.scale >= DEEP_MAX_SCALE - 1e-6) {
+    stopAutoZoom();
+    return;
+  }
+  autoZoomFrame = requestAnimationFrame(autoZoomStep);
+}
+
+function startAutoZoom() {
+  if (autoZoomActive) return;
+  autoZoomActive = true;
+  autoZoomLastTs = null;
+  if (autoZoomBtn) autoZoomBtn.textContent = "stop zoom";
+  autoZoomFrame = requestAnimationFrame(autoZoomStep);
+}
+
+function stopAutoZoom() {
+  autoZoomActive = false;
+  if (autoZoomFrame !== null) cancelAnimationFrame(autoZoomFrame);
+  autoZoomFrame = null;
+  if (autoZoomBtn) autoZoomBtn.textContent = "auto zoom";
+}
+
+autoZoomBtn?.addEventListener("click", () => {
+  if (autoZoomActive) stopAutoZoom();
+  else startAutoZoom();
+});
+
 document.getElementById("reset")?.addEventListener("click", () => {
+  stopAutoZoom();
   Object.assign(state, DEFAULT_STATE);
   if (maxiterInput) maxiterInput.value = state.maxiter;
   if (maxiterVal) maxiterVal.textContent = state.maxiter;
