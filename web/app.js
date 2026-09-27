@@ -1,10 +1,31 @@
 import { VERTEX_SRC, FRAGMENT_SRC } from "./shaders.js";
 
-// GPU fragment shaders here run on 32-bit floats, which have far less
-// precision than the float64 used on the Python/numba side. This caps
-// out well before mandel_audio.fractal.MAX_SAFE_SCALE (45).
-const MAX_SAFE_SCALE_WEB = 22;
-const PRECISION_WARNING_SCALE = 18;
+// GPU fragment shaders here run on 32-bit floats (~24-bit mantissa),
+// far less precision than the float64 used on the Python/numba side.
+// The shader computes c = u_center + uv * (2*halfWidth) in highp
+// float; that addition rounds to the ULP of |u_center|'s magnitude,
+// not of the (tiny, deeply-zoomed) offset. Once the per-pixel step in
+// the complex plane drops below that ULP, screen pixels start
+// collapsing onto the same float32 value ("pixelation"). Where that
+// happens depends on canvas resolution and how far the view center is
+// from zero, not on scale alone — so compute it dynamically instead
+// of using one fixed constant (see mandel_audio.fractal.MAX_SAFE_SCALE
+// for the analogous, also-resolution-dependent, float64 cliff).
+const FLOAT32_MANTISSA_BITS = 24;
+
+// Largest zoom `scale` at which a screen pixel's step in the complex
+// plane is still at least `marginUlps` float32 ULPs (of the view
+// center's magnitude) — i.e. still resolvable as distinct pixels.
+function maxScaleForPrecision(marginUlps, cx, cy) {
+  const mag = Math.max(Math.abs(cx), Math.abs(cy), 0.25);
+  const ulp = Math.pow(2, -FLOAT32_MANTISSA_BITS) * mag;
+  const pixelHeight = canvas.height || window.innerHeight;
+  // pixelStep(scale) = 2*halfWidth(scale)/pixelHeight = 2.5*2^-scale/pixelHeight
+  // solve pixelStep(scale) == marginUlps * ulp for scale:
+  return -Math.log2((marginUlps * ulp * pixelHeight) / 2.5);
+}
+const HARD_CAP_MARGIN_ULPS = 1; // beyond this, pixels are provably indistinguishable
+const WARNING_MARGIN_ULPS = 8; // warn with some headroom before that cliff
 
 const canvas = document.getElementById("fractal");
 const gl = canvas.getContext("webgl2");
@@ -95,7 +116,8 @@ const coordsEl = document.getElementById("coords");
 const warningEl = document.getElementById("precision-warning");
 function updateHud() {
   coordsEl.textContent = `x: ${state.x.toFixed(6)}, y: ${state.y.toFixed(6)}, scale: ${state.scale.toFixed(2)}`;
-  warningEl.classList.toggle("hidden", state.scale < PRECISION_WARNING_SCALE);
+  const warnScale = maxScaleForPrecision(WARNING_MARGIN_ULPS, state.x, state.y);
+  warningEl.classList.toggle("hidden", state.scale < warnScale);
 }
 
 let urlTimer = null;
@@ -121,7 +143,8 @@ function redraw() {
 
 // ---- interaction: wheel to zoom, drag to pan, pinch to zoom+pan ----
 function zoomAt(cx, cy, newScale) {
-  newScale = Math.min(Math.max(newScale, 0), MAX_SAFE_SCALE_WEB);
+  const cap = maxScaleForPrecision(HARD_CAP_MARGIN_ULPS, cx, cy);
+  newScale = Math.min(Math.max(newScale, 0), cap);
   const oldHw = halfWidth();
   state.scale = newScale;
   const newHw = halfWidth();
