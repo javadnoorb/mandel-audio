@@ -25,10 +25,14 @@ Any static file server works (serving over `file://` will not, since
 
 ## Notes
 
-- Rendering uses 32-bit floats on the GPU, so zoom is capped around
-  `scale=22` — well short of the float64 (`scale=45`) limit on the
-  Python side, and far short of true deep zoom. A perturbation-based
-  deep-zoom renderer is planned as a follow-up.
+- Rendering uses 32-bit floats on the GPU, which run out of precision
+  far short of true deep zoom and well short of the float64
+  (`scale=45`) limit on the Python side. The zoom cap and the
+  "approaching precision limits" warning are computed dynamically from
+  the canvas resolution and the current view center (see
+  `maxScaleForPrecision` in `app.js`) rather than a fixed scale, since
+  where pixels start visibly quantizing depends on both. A
+  perturbation-based deep-zoom renderer is planned as a follow-up.
 
 ## Deploying
 
