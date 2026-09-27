@@ -68,16 +68,36 @@ const CANDIDATE_OFFSETS = [
   [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7],
 ];
 
+// Below this fraction of maxiter, a reference is considered "genuinely
+// bad" and worth searching around. Above it, the center is used as-is
+// even though it technically escaped -- see findGoodReference.
+const GOOD_ENOUGH_FRACTION = 0.5;
+
 // Picks a reference point near (centerRe, centerIm) whose orbit survives
 // as long as possible (ideally the full maxiter), searching a small ring
 // of nearby candidates when the center itself escapes early. Returns
 // { re, im, orbit } -- re/im are dd values, possibly different from the
 // input if a nearby candidate did better.
+//
+// Deliberately conservative about switching away from the center: almost
+// every point near the Mandelbrot boundary escapes *eventually* (even a
+// perfectly fine one might just escape very late, close to maxiter), so
+// treating "escaped at all" as the trigger for searching meant nearly
+// every rebase searched, and "whichever candidate has the highest count"
+// could jump to a wildly different nearby point for a marginal gain --
+// causing visibly discontinuous jumps (color/black-region flicker)
+// between rebases during otherwise-smooth continuous zooming, even
+// though each individual frame looked reasonable in isolation. Only
+// searching when the center falls below a real quality bar keeps most
+// rebases using the center directly (deterministic, continuous), and
+// only accepts a candidate that's clearly better, not just numerically
+// higher, when a search does happen.
 export function findGoodReference(centerRe, centerIm, maxiter, searchRadius) {
   let bestRe = centerRe;
   let bestIm = centerIm;
   let best = referenceOrbit(centerRe, centerIm, maxiter);
-  if (!best.escaped) return { re: bestRe, im: bestIm, orbit: best };
+  const goodEnough = maxiter * GOOD_ENOUGH_FRACTION;
+  if (!best.escaped || best.count >= goodEnough) return { re: bestRe, im: bestIm, orbit: best };
 
   for (const [dx, dy] of CANDIDATE_OFFSETS) {
     const candRe = ddAdd(centerRe, ddFromNumber(dx * searchRadius));
@@ -87,7 +107,7 @@ export function findGoodReference(centerRe, centerIm, maxiter, searchRadius) {
       bestRe = candRe;
       bestIm = candIm;
       best = orbit;
-      if (!best.escaped) break; // can't do better than "never escapes"
+      if (!best.escaped || best.count >= goodEnough) break; // good enough, stop searching
     }
   }
   return { re: bestRe, im: bestIm, orbit: best };
