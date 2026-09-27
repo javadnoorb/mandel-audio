@@ -238,20 +238,30 @@ function rebaseReferenceIfNeeded() {
 }
 
 // ---- HUD ----
+// Looked up defensively: GitHub Pages cache-busts app.js/shaders.js/style.css
+// on every deploy (unique ?v=<sha> URL each time), but index.html itself has
+// no such versioning, so a browser can pair a stale cached index.html with
+// the current app.js if a feature added new elements since that page was
+// cached. Missing elements degrade that piece of the HUD instead of
+// throwing and halting the whole script before it ever draws the canvas.
 const coordsEl = document.getElementById("coords");
 const warningEl = document.getElementById("precision-warning");
 const deepWarningEl = document.getElementById("deepzoom-warning");
 function updateHud() {
   if (usingDeepRenderer()) {
-    coordsEl.textContent =
-      `x: ${state.x.toFixed(10)}, y: ${state.y.toFixed(10)}, scale: ${state.scale.toFixed(2)} (deep)`;
-    warningEl.classList.add("hidden");
-    deepWarningEl.classList.toggle("hidden", !refEscapedEarly);
+    if (coordsEl) {
+      coordsEl.textContent =
+        `x: ${state.x.toFixed(10)}, y: ${state.y.toFixed(10)}, scale: ${state.scale.toFixed(2)} (deep)`;
+    }
+    warningEl?.classList.add("hidden");
+    deepWarningEl?.classList.toggle("hidden", !refEscapedEarly);
   } else {
-    coordsEl.textContent = `x: ${state.x.toFixed(6)}, y: ${state.y.toFixed(6)}, scale: ${state.scale.toFixed(2)}`;
+    if (coordsEl) {
+      coordsEl.textContent = `x: ${state.x.toFixed(6)}, y: ${state.y.toFixed(6)}, scale: ${state.scale.toFixed(2)}`;
+    }
     const warnScale = maxScaleForPrecision(WARNING_MARGIN_ULPS, state.x, state.y);
-    warningEl.classList.toggle("hidden", state.scale < warnScale);
-    deepWarningEl.classList.add("hidden");
+    warningEl?.classList.toggle("hidden", state.scale < warnScale);
+    deepWarningEl?.classList.add("hidden");
   }
 }
 
@@ -305,6 +315,13 @@ if (state.deepZoom) {
   state.x = ddToNumber(viewCenterDD.re);
   state.y = ddToNumber(viewCenterDD.im);
 }
+
+// Draw the initial view now, before wiring up optional controls below --
+// so the canvas renders even if a stale cached index.html (see the HUD
+// comment above) is missing an element some later control-wiring expects.
+window.addEventListener("resize", resize);
+resize();
+updateHud();
 
 // ---- interaction: wheel to zoom, drag to pan, pinch to zoom+pan ----
 function zoomAt(cx, cy, newScale) {
@@ -449,51 +466,60 @@ canvas.addEventListener("pointerup", endPointer);
 canvas.addEventListener("pointercancel", endPointer);
 
 // ---- controls ----
+// Each control is wired defensively (see the HUD comment above): a stale
+// cached index.html missing one of these elements should only disable
+// that one control, never take down the rest of the page.
 const maxiterInput = document.getElementById("maxiter");
 const maxiterVal = document.getElementById("maxiter-val");
-maxiterInput.value = state.maxiter;
-maxiterVal.textContent = state.maxiter;
-maxiterInput.addEventListener("input", () => {
-  state.maxiter = parseInt(maxiterInput.value, 10);
-  maxiterVal.textContent = state.maxiter;
-  // Reference orbit length depends on maxiter; render()'s lazy rebase only
-  // triggers on view-center drift, so force it explicitly here when a
-  // stale orbit is actually in use.
-  if (usingDeepRenderer()) rebaseReference();
-  redraw();
-});
+if (maxiterInput) {
+  maxiterInput.value = state.maxiter;
+  if (maxiterVal) maxiterVal.textContent = state.maxiter;
+  maxiterInput.addEventListener("input", () => {
+    state.maxiter = parseInt(maxiterInput.value, 10);
+    if (maxiterVal) maxiterVal.textContent = state.maxiter;
+    // Reference orbit length depends on maxiter; render()'s lazy rebase only
+    // triggers on view-center drift, so force it explicitly here when a
+    // stale orbit is actually in use.
+    if (usingDeepRenderer()) rebaseReference();
+    redraw();
+  });
+}
 
 const paletteSelect = document.getElementById("palette");
-paletteSelect.value = state.palette;
-paletteSelect.addEventListener("change", () => {
-  state.palette = parseInt(paletteSelect.value, 10);
-  redraw();
-});
+if (paletteSelect) {
+  paletteSelect.value = state.palette;
+  paletteSelect.addEventListener("change", () => {
+    state.palette = parseInt(paletteSelect.value, 10);
+    redraw();
+  });
+}
 
 const deepzoomCheckbox = document.getElementById("deepzoom");
-deepzoomCheckbox.checked = state.deepZoom;
-deepzoomCheckbox.addEventListener("change", () => {
-  state.deepZoom = deepzoomCheckbox.checked;
-  if (state.deepZoom) {
-    viewCenterDD = ddcFromNumbers(state.x, state.y);
-    refOrbitData = null;
-    refCenterDD = null;
-    // Reference orbit is only built once actually needed (see
-    // usingDeepRenderer) -- at ordinary zoom this is a no-op until you
-    // zoom in past what the direct renderer can show.
-  } else {
-    // the direct float32 shader can't usefully render past its own
-    // precision cliff -- drop back to a scale it can actually show.
-    state.scale = Math.min(state.scale, maxScaleForPrecision(HARD_CAP_MARGIN_ULPS, state.x, state.y));
-  }
-  redraw();
-});
+if (deepzoomCheckbox) {
+  deepzoomCheckbox.checked = state.deepZoom;
+  deepzoomCheckbox.addEventListener("change", () => {
+    state.deepZoom = deepzoomCheckbox.checked;
+    if (state.deepZoom) {
+      viewCenterDD = ddcFromNumbers(state.x, state.y);
+      refOrbitData = null;
+      refCenterDD = null;
+      // Reference orbit is only built once actually needed (see
+      // usingDeepRenderer) -- at ordinary zoom this is a no-op until you
+      // zoom in past what the direct renderer can show.
+    } else {
+      // the direct float32 shader can't usefully render past its own
+      // precision cliff -- drop back to a scale it can actually show.
+      state.scale = Math.min(state.scale, maxScaleForPrecision(HARD_CAP_MARGIN_ULPS, state.x, state.y));
+    }
+    redraw();
+  });
+}
 
-document.getElementById("reset").addEventListener("click", () => {
+document.getElementById("reset")?.addEventListener("click", () => {
   Object.assign(state, DEFAULT_STATE);
-  maxiterInput.value = state.maxiter;
-  maxiterVal.textContent = state.maxiter;
-  paletteSelect.value = state.palette;
+  if (maxiterInput) maxiterInput.value = state.maxiter;
+  if (maxiterVal) maxiterVal.textContent = state.maxiter;
+  if (paletteSelect) paletteSelect.value = state.palette;
   if (state.deepZoom) {
     viewCenterDD = ddcFromNumbers(state.x, state.y);
     refOrbitData = null;
@@ -502,20 +528,18 @@ document.getElementById("reset").addEventListener("click", () => {
   redraw();
 });
 
-document.getElementById("share").addEventListener("click", async () => {
+document.getElementById("share")?.addEventListener("click", async () => {
   syncUrl();
   try {
     await navigator.clipboard.writeText(location.href);
     const btn = document.getElementById("share");
-    const original = btn.textContent;
-    btn.textContent = "copied!";
-    setTimeout(() => (btn.textContent = original), 1200);
+    if (btn) {
+      const original = btn.textContent;
+      btn.textContent = "copied!";
+      setTimeout(() => (btn.textContent = original), 1200);
+    }
   } catch {
     // clipboard API unavailable (e.g. insecure context) — no-op, the
     // URL bar already reflects the current view via history.replaceState.
   }
 });
-
-window.addEventListener("resize", resize);
-resize();
-updateHud();
