@@ -24,6 +24,10 @@
         <input id="maxiter" type="range" min="100" max="2000" step="50" value="500" />
         <span id="maxiter-val">500</span>
       </label>
+      <label>
+        <input id="deepzoom" type="checkbox" />
+        deep zoom (beta)
+      </label>
       <button id="reset">reset view</button>
       <button id="share">copy link</button>
     </div>
@@ -31,7 +35,10 @@
       scroll/pinch to zoom &middot; drag to pan
     </div>
     <div id="precision-warning" class="hidden">
-      approaching float32 precision limits — deep zoom (perturbation-based) is planned as a follow-up
+      approaching float32 precision limits — enable "deep zoom" to keep going
+    </div>
+    <div id="deepzoom-warning" class="hidden">
+      reference point escaped early — pick a point nearer the set (or inside it) for a cleaner deep zoom
     </div>
   </div>
 
