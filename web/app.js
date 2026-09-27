@@ -1,6 +1,6 @@
 import { VERTEX_SRC, FRAGMENT_SRC, DEEP_FRAGMENT_SRC, MAX_ITER_CAP } from "./shaders.js";
 import { ddAdd, ddSub, ddMul, ddFromNumber, ddToNumber, ddcFromNumbers } from "./bignum.js";
-import { referenceOrbit, MAX_REF_ITER, DEEP_MAX_SCALE } from "./deepzoom.js";
+import { findGoodReference, MAX_REF_ITER, DEEP_MAX_SCALE } from "./deepzoom.js";
 
 // GPU fragment shaders here run on 32-bit floats (~24-bit mantissa),
 // far less precision than the float64 used on the Python/numba side.
@@ -214,9 +214,17 @@ function uploadRefOrbitTexture(orbit) {
 }
 
 function rebaseReference() {
-  refCenterDD = { re: viewCenterDD.re, im: viewCenterDD.im };
   const maxiter = Math.min(state.maxiter, MAX_REF_ITER);
-  refOrbitData = referenceOrbit(refCenterDD.re, refCenterDD.im, maxiter);
+  // Every pixel's iteration budget in the deep shader is capped by
+  // however long the reference orbit itself survives, so an unlucky
+  // view center that happens to escape early would otherwise truncate
+  // detail for the *entire* view, not just itself. Search a small ring
+  // of nearby candidates (within the rebase drift tolerance below) for
+  // one that survives longer.
+  const searchRadius = 0.5 * halfWidth();
+  const found = findGoodReference(viewCenterDD.re, viewCenterDD.im, maxiter, searchRadius);
+  refCenterDD = { re: found.re, im: found.im };
+  refOrbitData = found.orbit;
   uploadRefOrbitTexture(refOrbitData);
   refEscapedEarly = refOrbitData.escaped && refOrbitData.count < maxiter / 4;
 }
