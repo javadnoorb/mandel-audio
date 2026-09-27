@@ -6,3 +6,4 @@ src/__pycache__/
 *.egg-info/
 build/
 dist/
+deploy/.vultr-instance-id

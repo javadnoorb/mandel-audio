@@ -162,6 +162,12 @@ avoids that entirely. On a machine with more cores than one frame's
 internal parallelism can use by itself, `--workers` should scale
 further still.
 
+For a many-core render without tying up your own machine, see
+[`deploy/README.md`](deploy/README.md) for a one-command Vultr VM setup
+(the intended pairing with the [web explorer](web/)'s "copy coords"
+button: find a point interactively, render it on a rented box, pull the
+video back down).
+
 ## Development
 
 ```bash
@@ -181,6 +187,8 @@ mandel_audio/
   render.py             # matplotlib rendering (single-frame PNGs)
   cli.py                # `mandel-audio` command
 tests/
+web/                     # interactive WebGL/Web Audio browser explorer
+deploy/                  # scripts for rendering on a rented Vultr VM
 ```
 
 ## Roadmap
