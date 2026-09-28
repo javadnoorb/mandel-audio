@@ -1,0 +1,39 @@
+# Fraktaler 3 parameters for exponential-map keyframes that
+# tools/song_to_zoomasm.py + zoomasm assemble into a zoom video.
+# Based on Fraktaler 3's "Recommended Parameters for Zoomasm", sized
+# down for 1080x1080 output.
+#
+#   SDL_VIDEODRIVER=offscreen fraktaler-3 -b -P -w wisdom.toml keyframes.f3.toml
+#
+# Writes kf/kf.00000000.exr (deepest) onward, each zoomed out 2x, until
+# past the full view. The example coordinate took 20 min on an 8-core CPU.
+
+# Target coordinate. location.zoom is the *deepest* keyframe: pick it so
+# the view there is uniform (all exterior or interior), otherwise the end
+# of the zoom looks strange in zoomasm. For this coordinate detail runs
+# out around mandel_audio scale 28-30, so 4e9 (~ scale 31) is safely past it.
+location.real = "-0.6876029798"
+location.imag = "0.3310135456"
+location.zoom = "4e9"
+
+bailout.iterations = 4096
+bailout.maximum_reference_iterations = 4096
+bailout.maximum_perturb_iterations = 4096
+bailout.maximum_bla_steps = 4096
+
+# Width ~ pi x output diagonal; height = width * ln(2) / (2 pi) so each
+# keyframe covers exactly one 2x zoom step. zoomasm's docs suggest
+# 6912x768 for 1920x1080 and 12288x1360 for 4K.
+image.width = 6144
+image.height = 680
+image.subframes = 1
+transform.exponential_map = true
+
+render.zoom_out_sequence = true
+render.filename = "kf/kf"
+render.save_exr = true
+render.exr_channels = ["R", "G", "B", "N0", "N1", "NF", "T", "DEX", "DEY"]
+
+algorithm.reuse_reference = true
+opencl.tile_width = 768
+opencl.tile_height = 680

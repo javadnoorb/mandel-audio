@@ -162,6 +162,37 @@ avoids that entirely. On a machine with more cores than one frame's
 internal parallelism can use by itself, `--workers` should scale
 further still.
 
+### Fraktaler 3 + zoomasm workflow (experimental)
+
+The fractal computation is the expensive part of a video, and in
+`mandel-audio video` it's redone for every frame, so trying a new song,
+beat punch or palette means re-rendering everything. The established
+fractal-zoom tools split this up:
+
+1. **[Fraktaler 3](https://fraktaler.mathr.co.uk/)** computes the zoom
+   *once* per coordinate, as exponential-map keyframes (EXR files of raw
+   iteration data, one per 2x of zoom). Settings:
+   `tools/keyframes.f3.toml.template`.
+2. **[zoomasm](https://mathr.co.uk/zoomasm/)** assembles video frames
+   from those keyframes on the GPU, with a GLSL colour shader and a zoom
+   timeline, and muxes in a soundtrack.
+3. **`tools/song_to_zoomasm.py`** supplies the part neither tool does:
+   it runs this package's music analysis and writes a zoomasm session
+   whose timeline follows the beats and whose shader colours by the
+   bass/mid/treble/loudness of the moment.
+
+```bash
+python tools/song_to_zoomasm.py --audio song.mp3 --keyframes kf/ \
+    --out session/ --z-at-scale0 31.22 --end-scale 28 -o zoom.mp4
+zoomasm --record session/session.toml
+```
+
+Changing the song, zoom timing or colours then only re-runs steps 3 and
+2, not the fractal math. Status: keyframes for one coordinate rendered
+in 20 min on an 8-core CPU; zoomasm assembly hasn't produced a video yet
+(the only attempt ran on software OpenGL and stalled). Both tools are
+AGPL and ship Windows binaries; on Linux they build from source.
+
 ## Development
 
 ```bash
@@ -180,6 +211,9 @@ mandel_audio/
   reactive.py           # ties audio analysis to fractal color + zoom
   render.py             # matplotlib rendering (single-frame PNGs)
   cli.py                # `mandel-audio` command
+tools/
+  song_to_zoomasm.py    # song -> zoomasm session (Fraktaler 3 + zoomasm workflow)
+  keyframes.f3.toml.template  # Fraktaler 3 keyframe settings
 tests/
 ```
 
